@@ -1,0 +1,407 @@
+import React, { useState, useMemo } from "react";
+import {
+  useReactTable,
+  getCoreRowModel,
+  flexRender,
+  createColumnHelper,
+} from "@tanstack/react-table";
+import {
+  DndContext,
+  closestCenter,
+  PointerSensor,
+  useSensor,
+  useSensors,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  verticalListSortingStrategy,
+  useSortable,
+  arrayMove,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+
+const columnHelper = createColumnHelper();
+
+// ============================================================
+// Draggable Row
+// ============================================================
+const DraggableRow = ({ row, onDelete }) => {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: row.original.id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
+  return (
+    <tr
+      ref={setNodeRef}
+      style={style}
+      className="border-b border-gray-100 hover:bg-gray-50"
+    >
+      <td className="w-10 px-2 py-3 text-center">
+        <span
+          {...attributes}
+          {...listeners}
+          className="cursor-grab active:cursor-grabbing text-gray-300 hover:text-gray-500"
+        >
+          ⠿
+        </span>
+      </td>
+      {row.getVisibleCells().map((cell) => (
+        <td key={cell.id} className="px-4 py-3">
+          {flexRender(cell.column.columnDef.cell, cell.getContext())}
+        </td>
+      ))}
+      <td className="w-10 px-2 py-3 text-center">
+        <button
+          onClick={() => onDelete(row.original.id)}
+          className="text-gray-300 hover:text-red-400 cursor-pointer text-sm"
+        >
+          ✕
+        </button>
+      </td>
+    </tr>
+  );
+};
+
+// ============================================================
+// Answer Modal — quick edit
+// ============================================================
+const AnswerModal = ({ question, onClose, onSave, onOpenAnswerPage }) => {
+  const [draftLabel, setDraftLabel] = useState("");
+  const [draftContent, setDraftContent] = useState("");
+  const [showForm, setShowForm] = useState(false);
+
+  const handleAddAnswer = () => {
+    if (!draftContent.trim()) return;
+    const newAnswer = {
+      id: `${Date.now()}-${Math.random()}`,
+      label: draftLabel.trim() || `Version ${question.answers.length + 1}`,
+      content: draftContent.trim(),
+    };
+    onSave([...question.answers, newAnswer]);
+    setDraftLabel("");
+    setDraftContent("");
+    setShowForm(false);
+  };
+
+  const handleDeleteAnswer = (answerId) => {
+    onSave(question.answers.filter((a) => a.id !== answerId));
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+      <div className="bg-white rounded-2xl p-8 max-w-2xl w-full max-h-[80vh] flex flex-col">
+        <div className="flex items-center justify-between mb-1">
+          <h2 className="text-lg font-bold text-gray-800">
+            {question.question}
+          </h2>
+          <button
+            onClick={onClose}
+            className="text-gray-400 hover:text-gray-600 cursor-pointer text-lg"
+          >
+            ✕
+          </button>
+        </div>
+        <span className="text-xs text-gray-400 mb-6">Quick Edit</span>
+
+        <div className="flex-1 overflow-y-auto show-scrollbar mb-6">
+          {question.answers.length === 0 && !showForm ? (
+            <p className="text-gray-300 text-sm text-center py-4">
+              No answers yet
+            </p>
+          ) : (
+            <div className="flex flex-col gap-4">
+              {question.answers.map((answer) => (
+                <div key={answer.id} className="bg-gray-50 rounded-xl p-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-sm font-medium text-gray-700">
+                      {answer.label}
+                    </span>
+                    <button
+                      onClick={() => handleDeleteAnswer(answer.id)}
+                      className="text-gray-300 hover:text-red-400 cursor-pointer text-xs"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                  <p className="text-sm text-gray-600 whitespace-pre-wrap">
+                    {answer.content}
+                  </p>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="border-t border-gray-100 pt-4">
+          {showForm ? (
+            <>
+              <div className="flex gap-3 mb-3">
+                <input
+                  type="text"
+                  value={draftLabel}
+                  onChange={(e) => setDraftLabel(e.target.value)}
+                  placeholder={`Version ${question.answers.length + 1}`}
+                  className="w-40 border border-gray-200 rounded-lg px-3 py-2 text-sm placeholder-gray-300"
+                />
+                <span className="text-xs text-gray-300 self-center">
+                  Optional label (e.g. "Case - STAR format", "Short version")
+                </span>
+              </div>
+              <textarea
+                value={draftContent}
+                onChange={(e) => setDraftContent(e.target.value)}
+                placeholder="Paste or write your answer here..."
+                rows={4}
+                autoFocus
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm placeholder-gray-300 resize-none mb-3"
+              />
+              <div className="flex justify-end gap-3">
+                <button
+                  onClick={() => { setShowForm(false); setDraftLabel(""); setDraftContent(""); }}
+                  className="px-4 py-2 text-gray-400 hover:text-gray-600 text-sm cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleAddAnswer}
+                  className="px-5 py-2 bg-orange-400 text-white rounded-lg hover:bg-orange-500 cursor-pointer text-sm"
+                >
+                  Add Answer
+                </button>
+              </div>
+            </>
+          ) : (
+            <div className="flex flex-col gap-3">
+              <button
+                onClick={() => setShowForm(true)}
+                className="w-full py-2.5 border border-gray-200 rounded-lg text-sm text-gray-500
+                  hover:border-gray-300 hover:text-gray-700 cursor-pointer"
+              >
+                Quick Edit — Add {question.answers.length === 0 ? "an answer" : "another version"}
+              </button>
+              <button
+                onClick={() => { onClose(); onOpenAnswerPage(question.id); }}
+                className="w-full py-2.5 border border-orange-400 bg-orange-50 rounded-lg text-sm text-orange-500
+                  hover:bg-orange-100 cursor-pointer"
+              >
+                ✨ AI Draft — Open full editor
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ============================================================
+// PrepTable
+// ============================================================
+const PrepTable = ({ questions, onUpdateQuestions, onOpenAnswerPage, onOpenPracticePage }) => {
+  const [newQuestionText, setNewQuestionText] = useState("");
+  const [openAnswerModalId, setOpenAnswerModalId] = useState(null);
+  const modalQuestion = questions.find((q) => q.id === openAnswerModalId);
+
+  const columns = useMemo(
+    () => [
+      columnHelper.accessor("question", {
+        header: "Question",
+        cell: (info) => (
+          <span className="text-sm text-gray-700">{info.getValue()}</span>
+        ),
+      }),
+      columnHelper.accessor("answers", {
+        header: "Answers",
+        cell: (info) => {
+          const answers = info.getValue();
+          const count = answers.length;
+          return (
+            <button
+              onClick={() => setOpenAnswerModalId(info.row.original.id)}
+              className={`text-xs px-2 py-0.5 rounded-full cursor-pointer transition-all ${
+                count === 0
+                  ? "bg-gray-100 text-gray-400 hover:bg-gray-200"
+                  : "bg-blue-50 text-blue-500 hover:bg-blue-100"
+              }`}
+            >
+              {count === 0 ? "0 answers" : `${count} ${count === 1 ? "answer" : "answers"}`}
+            </button>
+          );
+        },
+      }),
+      // TODO: change for further development — wire to real practice/interview mode
+      columnHelper.display({
+        id: "practice",
+        header: "Practice",
+        cell: (info) => {
+          const hasAnswers = info.row.original.answers.length > 0;
+          return (
+            <button
+              onClick={() => {
+                if (hasAnswers) {
+                  onOpenPracticePage(info.row.original.id);
+                } else {
+                  setOpenAnswerModalId(info.row.original.id);
+                }
+              }}
+              className={`text-xs cursor-pointer ${
+                hasAnswers
+                  ? "text-orange-400 hover:text-orange-500"
+                  : "text-gray-400 hover:text-gray-500"
+              }`}
+            >
+              {hasAnswers ? "Practice →" : "Draft Answer"}
+            </button>
+          );
+        },
+      }),
+    ],
+    [onOpenPracticePage]
+  );
+
+  const table = useReactTable({
+    data: questions,
+    columns,
+    getCoreRowModel: getCoreRowModel(),
+    getRowId: (row) => String(row.id),
+  });
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: { distance: 5 },
+    })
+  );
+
+  const handleDragEnd = (event) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const oldIndex = questions.findIndex((q) => String(q.id) === String(active.id));
+    const newIndex = questions.findIndex((q) => String(q.id) === String(over.id));
+    onUpdateQuestions(arrayMove(questions, oldIndex, newIndex));
+  };
+
+  const handleAdd = () => {
+    if (!newQuestionText.trim()) return;
+    const newQ = {
+      id: `${Date.now()}-${Math.random()}`,
+      question: newQuestionText.trim(),
+      answers: [],
+      practices: [],
+    };
+    onUpdateQuestions([newQ, ...questions]);
+    setNewQuestionText("");
+  };
+
+  const handleAddKeyDown = (e) => {
+    if (e.key === "Enter") handleAdd();
+  };
+
+  const handleDelete = (questionId) => {
+    onUpdateQuestions(questions.filter((q) => q.id !== questionId));
+  };
+
+  const handleSaveAnswers = (newAnswers) => {
+    onUpdateQuestions(
+      questions.map((q) =>
+        q.id === openAnswerModalId ? { ...q, answers: newAnswers } : q
+      )
+    );
+  };
+
+  const rowIds = questions.map((q) => String(q.id));
+
+  return (
+    <>
+      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+        <table className="w-full">
+          <thead>
+            <tr className="border-b border-gray-200 bg-gray-50">
+              <th className="w-10 px-2 py-3" />
+              {table.getHeaderGroups().map((headerGroup) =>
+                headerGroup.headers.map((header) => (
+                  <th
+                    key={header.id}
+                    className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase"
+                  >
+                    {flexRender(header.column.columnDef.header, header.getContext())}
+                  </th>
+                ))
+              )}
+              <th className="w-10 px-2 py-3" />
+            </tr>
+
+            <tr className="border-b border-gray-100">
+              <td className="px-2 py-2 text-center text-gray-300">+</td>
+              <td className="px-4 py-2" colSpan={columns.length}>
+                <input
+                  type="text"
+                  value={newQuestionText}
+                  onChange={(e) => setNewQuestionText(e.target.value)}
+                  onKeyDown={handleAddKeyDown}
+                  placeholder="Type a new question and press Enter..."
+                  className="w-full text-sm placeholder-gray-300 outline-none"
+                />
+              </td>
+              <td className="px-2 py-2">
+                {newQuestionText.trim() && (
+                  <button
+                    onClick={handleAdd}
+                    className="text-orange-400 hover:text-orange-500 cursor-pointer text-sm"
+                  >
+                    ↵
+                  </button>
+                )}
+              </td>
+            </tr>
+          </thead>
+
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            onDragEnd={handleDragEnd}
+          >
+            <SortableContext items={rowIds} strategy={verticalListSortingStrategy}>
+              <tbody>
+                {table.getRowModel().rows.map((row) => (
+                  <DraggableRow
+                    key={row.id}
+                    row={row}
+                    onDelete={handleDelete}
+                  />
+                ))}
+              </tbody>
+            </SortableContext>
+          </DndContext>
+        </table>
+
+        {questions.length === 0 && (
+          <div className="py-12 text-center text-gray-300 text-sm">
+            No questions yet. Add one above!
+          </div>
+        )}
+      </div>
+
+      {modalQuestion && (
+        <AnswerModal
+          question={modalQuestion}
+          onClose={() => setOpenAnswerModalId(null)}
+          onSave={handleSaveAnswers}
+          onOpenAnswerPage={onOpenAnswerPage}
+        />
+      )}
+    </>
+  );
+};
+
+export default PrepTable;
