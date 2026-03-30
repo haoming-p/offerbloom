@@ -2,7 +2,7 @@ import { View, Text, TouchableOpacity, StyleSheet, Modal } from 'react-native';
 import { useState } from 'react';
 import { QuestionStatus } from '../data/mockData';
 
-// 每個 status 的顏色和文字設定
+// status badge component
 export const STATUS_CONFIG = {
   needs_practice: {
     label: 'Needs Practice',
@@ -34,7 +34,7 @@ export default function StatusBadge({ status, onStatusChange, editable = false }
   const [menuVisible, setMenuVisible] = useState(false);
   const config = STATUS_CONFIG[status];
 
-  // 不可編輯時只顯示 badge
+  // not editable badge
   if (!editable) {
     return (
       <View style={[styles.badge, { backgroundColor: config.bg }]}>
@@ -44,7 +44,7 @@ export default function StatusBadge({ status, onStatusChange, editable = false }
     );
   }
 
-  // 可編輯時點擊顯示選單
+  // editable badge
   return (
     <>
       <TouchableOpacity
@@ -57,7 +57,7 @@ export default function StatusBadge({ status, onStatusChange, editable = false }
         <Text style={[styles.chevron, { color: config.color }]}>▾</Text>
       </TouchableOpacity>
 
-      {/* Status 選單 */}
+      {/* Status menu */}
       <Modal
         visible={menuVisible}
         transparent
