@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { login, register, saveToken } from "../services/auth";
 
 const pmQuestions = [
   "Tell me about a time you led a cross-functional team",
@@ -55,8 +56,37 @@ const QuestionColumn = ({ title, questions }) => (
   </div>
 );
 
-const HelloPage = ({ onSignIn }) => {
-  const [showModal, setShowModal] = useState(null); // null, signin, signup
+const HelloPage = ({ onAuthSuccess }) => {
+  const [showModal, setShowModal] = useState(null); // null | "signin" | "signup"
+  const [form, setForm] = useState({ name: "", email: "", password: "" });
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  function openModal(type) {
+    setShowModal(type);
+    setForm({ name: "", email: "", password: "" });
+    setError("");
+  }
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    setError("");
+    setLoading(true);
+    try {
+      let result;
+      if (showModal === "signup") {
+        result = await register(form.name, form.email, form.password);
+      } else {
+        result = await login(form.email, form.password);
+      }
+      saveToken(result.access_token);
+      onAuthSuccess(result.user, showModal === "signup");
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  }
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -73,14 +103,13 @@ const HelloPage = ({ onSignIn }) => {
           </div>
           <div className="flex gap-3">
             <button
-              onClick={() => setShowModal('signup')}
+              onClick={() => openModal("signup")}
               className="bg-[#155EEF] text-white rounded-lg px-6 py-2 hover:bg-blue-700 cursor-pointer"
             >
               Give it a try
             </button>
-            {/* TODO: change for further development — replace with real sign in flow */}
             <button
-              onClick={() => setShowModal('signin')}
+              onClick={() => openModal("signin")}
               className="border border-[#155EEF] text-[#155EEF] rounded-lg px-6 py-2 hover:bg-blue-50 cursor-pointer"
             >
               Sign in
@@ -102,7 +131,7 @@ const HelloPage = ({ onSignIn }) => {
             refine your answers, and stand out with confidence.
           </p>
           <button
-            onClick={() => setShowModal('signup')}
+            onClick={() => openModal("signup")}
             className="mt-2 w-fit px-10 py-4 bg-orange-400 text-white text-lg font-semibold rounded-xl hover:bg-orange-500 cursor-pointer"
           >
             Start My Prep
@@ -137,31 +166,83 @@ const HelloPage = ({ onSignIn }) => {
         </div>
       </div>
 
-      {/* Demo Modal */}
-      {/* TODO: change for further development — replace with real sign in / sign up modal */}
+      {/* Auth Modal */}
       {showModal && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-          <div className="bg-white rounded-2xl p-10 max-w-md text-center">
-            <h2 className="text-2xl font-bold text-gray-800 mb-3">
-              Welcome! 
+          <div className="bg-white rounded-2xl p-10 w-full max-w-md">
+            <h2 className="text-2xl font-bold text-gray-800 mb-1">
+              {showModal === "signup" ? "Create your account" : "Welcome back"}
             </h2>
-            <p className="text-gray-500 mb-8">
-              This is a demo — no sign up needed. Jump straight in and explore OfferBloom.
+            <p className="text-gray-400 text-sm mb-6">
+              {showModal === "signup"
+                ? "Start prepping for your dream offer."
+                : "Sign in to continue."}
             </p>
-            <div className="flex flex-col gap-3">
+
+            <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+              {showModal === "signup" && (
+                <input
+                  type="text"
+                  placeholder="Full name"
+                  required
+                  value={form.name}
+                  onChange={(e) => setForm({ ...form, name: e.target.value })}
+                  className="border border-gray-200 rounded-lg px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-200"
+                />
+              )}
+              <input
+                type="email"
+                placeholder="Email"
+                required
+                value={form.email}
+                onChange={(e) => setForm({ ...form, email: e.target.value })}
+                className="border border-gray-200 rounded-lg px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-200"
+              />
+              <input
+                type="password"
+                placeholder="Password"
+                required
+                minLength={6}
+                value={form.password}
+                onChange={(e) => setForm({ ...form, password: e.target.value })}
+                className="border border-gray-200 rounded-lg px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-200"
+              />
+
+              {error && (
+                <p className="text-red-500 text-sm">{error}</p>
+              )}
+
               <button
-                onClick={onSignIn}
-                className="px-8 py-3 bg-orange-400 text-white font-semibold rounded-xl hover:bg-orange-500 cursor-pointer"
+                type="submit"
+                disabled={loading}
+                className="px-8 py-3 bg-orange-400 text-white font-semibold rounded-xl hover:bg-orange-500 cursor-pointer disabled:opacity-50"
               >
-                Enter Demo
+                {loading
+                  ? "Please wait…"
+                  : showModal === "signup"
+                  ? "Create account"
+                  : "Sign in"}
               </button>
+            </form>
+
+            <div className="mt-4 flex items-center justify-between text-sm text-gray-400">
+              <span>
+                {showModal === "signup" ? "Already have an account?" : "No account yet?"}
+              </span>
               <button
-                onClick={() => setShowModal(null)}
-                className="text-gray-400 hover:text-gray-600 cursor-pointer text-sm"
+                onClick={() => openModal(showModal === "signup" ? "signin" : "signup")}
+                className="text-[#155EEF] hover:underline cursor-pointer"
               >
-                {showModal === "signin" ? "Sign in" : "Sign up"}
+                {showModal === "signup" ? "Sign in" : "Sign up"}
               </button>
             </div>
+
+            <button
+              onClick={() => setShowModal(null)}
+              className="mt-4 w-full text-center text-gray-300 hover:text-gray-500 cursor-pointer text-xs"
+            >
+              Cancel
+            </button>
           </div>
         </div>
       )}

@@ -1,4 +1,5 @@
 import React, { useState, useRef } from "react";
+import { uploadFile } from "../../../services/files";
 
 // Helper: get icon based on file name or type
 const getFileIcon = (file) => {
@@ -54,25 +55,39 @@ const FilesList = ({
   const fileInputRef = useRef(null);
 
   // ============================================================
-  // File upload handler (browser memory only)
+  // File upload handler — sends to backend, stores in R2
   // ============================================================
-  const handleFileUpload = (e) => {
-    const uploadedFiles = Array.from(e.target.files || []);
-    uploadedFiles.forEach((file) => {
-      const newFile = {
-        id: `file-${Date.now()}-${Math.random()}`,
-        name: file.name,
-        type: "file",
-        size: file.size,
-        // Store the file object in memory for preview
-        // TODO: change for further development — upload to backend storage
-        fileObj: file,
-        linkedTo: [],
-      };
-      onAddFile(newFile);
-    });
-    // Reset input so the same file can be uploaded again
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState("");
+
+  const handleFileUpload = async (e) => {
+    const selectedFiles = Array.from(e.target.files || []);
     e.target.value = "";
+    if (selectedFiles.length === 0) return;
+
+    setUploading(true);
+    setUploadError("");
+
+    for (const file of selectedFiles) {
+      try {
+        const result = await uploadFile(file, "other");
+        onAddFile({
+          id: result.id,
+          name: result.name,
+          type: "file",
+          size: result.size,
+          url: result.url,
+          file_type: result.file_type,
+          content_type: result.content_type,
+          uploaded_at: result.uploaded_at,
+          linkedTo: [],
+        });
+      } catch (err) {
+        setUploadError(err.message);
+      }
+    }
+
+    setUploading(false);
   };
 
   // ============================================================
@@ -274,12 +289,17 @@ const FilesList = ({
           </div>
         </div>
       ) : (
+        <>
+        {uploadError && (
+          <p className="text-red-400 text-xs mb-2">{uploadError}</p>
+        )}
         <div className="flex gap-3">
           <button
             onClick={() => fileInputRef.current?.click()}
+            disabled={uploading}
             className="flex-1 py-2.5 border border-dashed border-gray-200 rounded-xl text-sm text-gray-400
-              hover:border-gray-300 hover:text-gray-500 cursor-pointer">
-            📄 + Upload File
+              hover:border-gray-300 hover:text-gray-500 cursor-pointer disabled:opacity-50">
+            {uploading ? "Uploading…" : "📄 + Upload File"}
           </button>
           <button
             onClick={() => setShowAddUrl(true)}
@@ -295,6 +315,7 @@ const FilesList = ({
             className="hidden"
           />
         </div>
+        </>
       )}
     </div>
   );
