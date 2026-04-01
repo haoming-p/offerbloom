@@ -1,7 +1,8 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import FilesList from "./FilesList";
 import ContentLibrary from "./ContentLibrary";
 import FileAIChat from "./FileAIChat";
+import { listFiles, deleteFile } from "../../../services/files";
 
 // View tabs for the files section
 const VIEW_TABS = [
@@ -22,6 +23,23 @@ const FilesTab = ({ data }) => {
       url: f.url || null,
     }))
   );
+
+  // Fetch files from backend on mount
+  useEffect(() => {
+    listFiles()
+      .then((data) =>
+        setFiles(
+          data.map((f) => ({
+            ...f,
+            type: f.type || "file",
+            size: f.size || null,
+            url: f.url || null,
+            linkedTo: f.linkedTo || [],
+          }))
+        )
+      )
+      .catch(() => {}); // fallback: keep initialFiles if request fails
+  }, []);
 
   const [activeRoleId, setActiveRoleId] = useState("all");
   const [activeView, setActiveView] = useState("files");
@@ -49,7 +67,12 @@ const FilesTab = ({ data }) => {
     setFiles([...files, newFile]);
   };
 
-  const handleDeleteFile = (fileId) => {
+  const handleDeleteFile = async (fileId) => {
+    try {
+      await deleteFile(fileId);
+    } catch {
+      // If backend delete fails, still remove from UI (or you can add an error toast here)
+    }
     setFiles(files.filter((f) => f.id !== fileId));
     if (selectedFileId === fileId) setSelectedFileId(null);
   };
