@@ -76,26 +76,26 @@ const DraggableRow = ({ row, onDelete }) => {
 // ============================================================
 // Answer Modal — quick edit
 // ============================================================
-const AnswerModal = ({ question, onClose, onSave, onOpenAnswerPage }) => {
+const AnswerModal = ({ question, onClose, onAddAnswer, onDeleteAnswer, onOpenAnswerPage }) => {
   const [draftLabel, setDraftLabel] = useState("");
   const [draftContent, setDraftContent] = useState("");
   const [showForm, setShowForm] = useState(false);
+  const [saving, setSaving] = useState(false);
 
-  const handleAddAnswer = () => {
+  const handleAddAnswer = async () => {
     if (!draftContent.trim()) return;
-    const newAnswer = {
-      id: `${Date.now()}-${Math.random()}`,
-      label: draftLabel.trim() || `Version ${question.answers.length + 1}`,
-      content: draftContent.trim(),
-    };
-    onSave([...question.answers, newAnswer]);
+    const label = draftLabel.trim() || `Version ${question.answers.length + 1}`;
+    const content = draftContent.trim();
+    setSaving(true);
+    await onAddAnswer(label, content);
+    setSaving(false);
     setDraftLabel("");
     setDraftContent("");
     setShowForm(false);
   };
 
   const handleDeleteAnswer = (answerId) => {
-    onSave(question.answers.filter((a) => a.id !== answerId));
+    onDeleteAnswer(answerId);
   };
 
   return (
@@ -175,9 +175,10 @@ const AnswerModal = ({ question, onClose, onSave, onOpenAnswerPage }) => {
                 </button>
                 <button
                   onClick={handleAddAnswer}
-                  className="px-5 py-2 bg-orange-400 text-white rounded-lg hover:bg-orange-500 cursor-pointer text-sm"
+                  disabled={saving}
+                  className="px-5 py-2 bg-orange-400 text-white rounded-lg hover:bg-orange-500 cursor-pointer text-sm disabled:opacity-50"
                 >
-                  Add Answer
+                  {saving ? "Saving…" : "Add Answer"}
                 </button>
               </div>
             </>
@@ -208,7 +209,7 @@ const AnswerModal = ({ question, onClose, onSave, onOpenAnswerPage }) => {
 // ============================================================
 // PrepTable
 // ============================================================
-const PrepTable = ({ questions, onUpdateQuestions, onOpenAnswerPage, onOpenPracticePage }) => {
+const PrepTable = ({ questions, onUpdateQuestions, onAddQuestion, onDeleteQuestion, onAddAnswer, onDeleteAnswer, onOpenAnswerPage, onOpenPracticePage }) => {
   const [newQuestionText, setNewQuestionText] = useState("");
   const [openAnswerModalId, setOpenAnswerModalId] = useState(null);
   const modalQuestion = questions.find((q) => q.id === openAnswerModalId);
@@ -293,14 +294,15 @@ const PrepTable = ({ questions, onUpdateQuestions, onOpenAnswerPage, onOpenPract
 
   const handleAdd = () => {
     if (!newQuestionText.trim()) return;
-    const newQ = {
-      id: `${Date.now()}-${Math.random()}`,
-      question: newQuestionText.trim(),
-      answers: [],
-      practices: [],
-    };
-    onUpdateQuestions([newQ, ...questions]);
+    const text = newQuestionText.trim();
     setNewQuestionText("");
+    if (onAddQuestion) {
+      onAddQuestion(text);
+    } else {
+      // fallback local-only
+      const newQ = { id: `${Date.now()}-${Math.random()}`, question: text, answers: [], practices: [] };
+      onUpdateQuestions([newQ, ...questions]);
+    }
   };
 
   const handleAddKeyDown = (e) => {
@@ -308,99 +310,86 @@ const PrepTable = ({ questions, onUpdateQuestions, onOpenAnswerPage, onOpenPract
   };
 
   const handleDelete = (questionId) => {
-    onUpdateQuestions(questions.filter((q) => q.id !== questionId));
-  };
-
-  const handleSaveAnswers = (newAnswers) => {
-    onUpdateQuestions(
-      questions.map((q) =>
-        q.id === openAnswerModalId ? { ...q, answers: newAnswers } : q
-      )
-    );
+    if (onDeleteQuestion) {
+      onDeleteQuestion(questionId);
+    } else {
+      onUpdateQuestions(questions.filter((q) => q.id !== questionId));
+    }
   };
 
   const rowIds = questions.map((q) => String(q.id));
 
   return (
-    <>
-      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-        <table className="w-full">
-          <thead>
-            <tr className="border-b border-gray-200 bg-gray-50">
-              <th className="w-10 px-2 py-3" />
-              {table.getHeaderGroups().map((headerGroup) =>
-                headerGroup.headers.map((header) => (
-                  <th
-                    key={header.id}
-                    className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase"
-                  >
-                    {flexRender(header.column.columnDef.header, header.getContext())}
-                  </th>
-                ))
-              )}
-              <th className="w-10 px-2 py-3" />
-            </tr>
-
-            <tr className="border-b border-gray-100">
-              <td className="px-2 py-2 text-center text-gray-300">+</td>
-              <td className="px-4 py-2" colSpan={columns.length}>
-                <input
-                  type="text"
-                  value={newQuestionText}
-                  onChange={(e) => setNewQuestionText(e.target.value)}
-                  onKeyDown={handleAddKeyDown}
-                  placeholder="Type a new question and press Enter..."
-                  className="w-full text-sm placeholder-gray-300 outline-none"
-                />
-              </td>
-              <td className="px-2 py-2">
-                {newQuestionText.trim() && (
-                  <button
-                    onClick={handleAdd}
-                    className="text-orange-400 hover:text-orange-500 cursor-pointer text-sm"
-                  >
-                    ↵
-                  </button>
+    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+      <SortableContext items={rowIds} strategy={verticalListSortingStrategy}>
+        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+          <table className="w-full">
+            <thead>
+              <tr className="border-b border-gray-200 bg-gray-50">
+                <th className="w-10 px-2 py-3" />
+                {table.getHeaderGroups().map((headerGroup) =>
+                  headerGroup.headers.map((header) => (
+                    <th
+                      key={header.id}
+                      className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase"
+                    >
+                      {flexRender(header.column.columnDef.header, header.getContext())}
+                    </th>
+                  ))
                 )}
-              </td>
-            </tr>
-          </thead>
+                <th className="w-10 px-2 py-3" />
+              </tr>
 
-          <DndContext
-            sensors={sensors}
-            collisionDetection={closestCenter}
-            onDragEnd={handleDragEnd}
-          >
-            <SortableContext items={rowIds} strategy={verticalListSortingStrategy}>
-              <tbody>
-                {table.getRowModel().rows.map((row) => (
-                  <DraggableRow
-                    key={row.id}
-                    row={row}
-                    onDelete={handleDelete}
+              <tr className="border-b border-gray-100">
+                <td className="px-2 py-2 text-center text-gray-300">+</td>
+                <td className="px-4 py-2" colSpan={columns.length}>
+                  <input
+                    type="text"
+                    value={newQuestionText}
+                    onChange={(e) => setNewQuestionText(e.target.value)}
+                    onKeyDown={handleAddKeyDown}
+                    placeholder="Type a new question and press Enter..."
+                    className="w-full text-sm placeholder-gray-300 outline-none"
                   />
-                ))}
-              </tbody>
-            </SortableContext>
-          </DndContext>
-        </table>
+                </td>
+                <td className="px-2 py-2">
+                  {newQuestionText.trim() && (
+                    <button
+                      onClick={handleAdd}
+                      className="text-orange-400 hover:text-orange-500 cursor-pointer text-sm"
+                    >
+                      ↵
+                    </button>
+                  )}
+                </td>
+              </tr>
+            </thead>
 
-        {questions.length === 0 && (
-          <div className="py-12 text-center text-gray-300 text-sm">
-            No questions yet. Add one above!
-          </div>
+            <tbody>
+              {table.getRowModel().rows.map((row) => (
+                <DraggableRow key={row.id} row={row} onDelete={handleDelete} />
+              ))}
+            </tbody>
+          </table>
+
+          {questions.length === 0 && (
+            <div className="py-12 text-center text-gray-300 text-sm">
+              No questions yet. Add one above!
+            </div>
+          )}
+        </div>
+
+        {modalQuestion && (
+          <AnswerModal
+            question={modalQuestion}
+            onClose={() => setOpenAnswerModalId(null)}
+            onAddAnswer={(label, content) => onAddAnswer(openAnswerModalId, label, content)}
+            onDeleteAnswer={(answerId) => onDeleteAnswer(openAnswerModalId, answerId)}
+            onOpenAnswerPage={onOpenAnswerPage}
+          />
         )}
-      </div>
-
-      {modalQuestion && (
-        <AnswerModal
-          question={modalQuestion}
-          onClose={() => setOpenAnswerModalId(null)}
-          onSave={handleSaveAnswers}
-          onOpenAnswerPage={onOpenAnswerPage}
-        />
-      )}
-    </>
+      </SortableContext>
+    </DndContext>
   );
 };
 

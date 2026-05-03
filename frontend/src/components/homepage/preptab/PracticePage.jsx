@@ -6,7 +6,7 @@ import React, { useState } from "react";
 // - onUpdatePractices: save updated practices array for this question
 // - onBack: return to table view
 // - onNavigate: switch to a different question by id
-const PracticePage = ({ question, questions, onUpdatePractices, onBack, onNavigate }) => {
+const PracticePage = ({ question, questions, onUpdatePractices, onAddPractice, onDeletePractice, onBack, onNavigate }) => {
 
   // --- Recording state ---
   // "idle" | "recording" | "recorded"
@@ -52,21 +52,28 @@ const PracticePage = ({ question, questions, onUpdatePractices, onBack, onNaviga
     setPendingTag("");
   };
 
-  const handleSavePractice = () => {
-    // TODO: change for further development — save real audio blob, get real transcript from Speech API
-    const newPractice = {
-      id: `${Date.now()}-${Math.random()}`,
-      tag: pendingTag.trim() || `Attempt ${(question.practices?.length || 0) + 1}`,
-      duration: recordingTime,
-      transcript: "(Voice transcript will appear here — Speech-to-Text coming soon)",
-      aiFeedback: null, // no feedback yet until they request it
-      createdAt: Date.now(),
-    };
-    onUpdatePractices([newPractice, ...(question.practices || [])]);
+  const handleSavePractice = async () => {
+    const tag = pendingTag.trim() || `Attempt ${(question.practices?.length || 0) + 1}`;
+    const transcript = "(Voice transcript will appear here — Speech-to-Text coming soon)";
     setRecordingState("idle");
     setRecordingTime(0);
     setPendingTag("");
-    setExpandedId(newPractice.id); // expand the new one
+
+    if (onAddPractice) {
+      const saved = await onAddPractice(tag, recordingTime, transcript);
+      if (saved) setExpandedId(saved.id);
+    } else {
+      const newPractice = {
+        id: `${Date.now()}-${Math.random()}`,
+        tag,
+        duration: recordingTime,
+        transcript,
+        aiFeedback: null,
+        createdAt: Date.now(),
+      };
+      onUpdatePractices([newPractice, ...(question.practices || [])]);
+      setExpandedId(newPractice.id);
+    }
   };
 
   // --- Request AI feedback for a specific practice ---
@@ -94,7 +101,11 @@ const PracticePage = ({ question, questions, onUpdatePractices, onBack, onNaviga
 
   // --- Delete a practice ---
   const handleDeletePractice = (practiceId) => {
-    onUpdatePractices((question.practices || []).filter((p) => p.id !== practiceId));
+    if (onDeletePractice) {
+      onDeletePractice(practiceId);
+    } else {
+      onUpdatePractices((question.practices || []).filter((p) => p.id !== practiceId));
+    }
     if (expandedId === practiceId) setExpandedId(null);
   };
 

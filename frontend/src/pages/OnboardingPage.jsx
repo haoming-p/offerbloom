@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import StepRoles from "../components/onboarding/StepRoles";
 import StepPositions from "../components/onboarding/StepPositions";
 import StepFiles from "../components/onboarding/StepFiles";
+import { saveOnboarding } from "../services/onboarding";
 
 const STEPS = [
   { id: 1, label: "Choose Roles" },
@@ -49,16 +50,22 @@ const OnboardingPage = ({ onComplete }) => {
   };
 
   // --- Navigation ---
-  const handleNext = () => {
+  const handleNext = async () => {
     // Step 1 required — must select at least one role
     if (currentStep === 1 && onboardingData.roles.length === 0) return;
 
     if (currentStep < STEPS.length) {
       setCurrentStep(currentStep + 1);
     } else {
-      // Pass all collected data up to App
-      // TODO: change for further development — send to backend
-      console.log("Onboarding complete:", onboardingData);
+      // Save roles and positions to backend, then hand off to App
+      try {
+        await saveOnboarding({
+          roles: onboardingData.roles,
+          positions: onboardingData.positions,
+        });
+      } catch (err) {
+        console.error("Failed to save onboarding:", err);
+      }
       onComplete(onboardingData);
     }
   };

@@ -1,64 +1,11 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import PrepHeader from "./PrepHeader";
 import PrepTable from "./PrepTable";
 import AnswerPage from "./AnswerPage";
 import PracticePage from "./PracticePage";
-
-// ============================================================
-// DEFAULT QUESTIONS — easy to replace with backend data later
-// TODO: change for further development — load from backend/QuestionBank
-// ============================================================
-const DEFAULT_QUESTIONS = {
-  "pm-bq": [
-    "How do you prioritize?",
-    "How do you align stakeholders?",
-    "A case to deal with conflicts?",
-    "How to hold accountability",
-    "Tell me the most complicated project you managed",
-  ],
-  "pm-product_sense": [
-    "How would you improve a product you use daily?",
-    "Define success metrics for a new feature",
-    "Walk me through a product launch strategy",
-    "How do you make trade-offs between user needs and business goals?",
-    "Describe a data-driven product decision you made",
-  ],
-  "pm-general": [
-    "Why product management?",
-    "Tell me about yourself",
-    "What's your biggest strength and weakness?",
-    "Where do you see yourself in 5 years?",
-    "Why should we hire you?",
-  ],
-  "sde-bq": [
-    "Tell me about a challenging technical project",
-    "Describe a time you disagreed with a teammate's approach",
-    "How do you handle tight deadlines?",
-    "Tell me about a time you mentored someone",
-    "Describe a time you had to learn something quickly",
-  ],
-  "sde-algorithm": [
-    "How would you find the longest substring without repeating characters?",
-    "Implement a LRU cache",
-    "Merge k sorted linked lists",
-    "Find the shortest path in a weighted graph",
-    "Design an algorithm for task scheduling with dependencies",
-  ],
-  "sde-system_design": [
-    "Design a URL shortener",
-    "Design a chat messaging system",
-    "Design a news feed",
-    "Design a rate limiter",
-    "Design a notification system",
-  ],
-  "sde-general": [
-    "Why software engineering?",
-    "Tell me about yourself",
-    "What's your preferred tech stack and why?",
-    "How do you stay current with new technologies?",
-    "Describe your debugging process",
-  ],
-};
+import { fetchQuestions, addQuestion, deleteQuestion } from "../../../services/questions";
+import { addAnswer, updateAnswer, deleteAnswer } from "../../../services/answers";
+import { addPractice, deletePractice } from "../../../services/practices";
 
 const DEFAULT_CATEGORIES = {
   pm: [
@@ -73,15 +20,6 @@ const DEFAULT_CATEGORIES = {
     { id: "general", label: "General" },
   ],
 };
-
-// Each question now has both answers and practices arrays
-const makeQuestions = (strings) =>
-  strings.map((q, i) => ({
-    id: `${Date.now()}-${i}-${Math.random()}`,
-    question: q,
-    answers: [],
-    practices: [],
-  }));
 
 const makeKey = (roleId, posKey, catId) => `${roleId}-${posKey}-${catId}`;
 
@@ -107,20 +45,7 @@ const PrepTab = ({ data }) => {
   });
 
   // --- Questions stored by composite key ---
-  const [questions, setQuestions] = useState(() => {
-    const initial = {};
-    roles.forEach((role) => {
-      const cats = DEFAULT_CATEGORIES[role.id] || [];
-      cats.forEach((cat) => {
-        const key = makeKey(role.id, "general", cat.id);
-        const defaults = DEFAULT_QUESTIONS[`${role.id}-${cat.id}`];
-        if (defaults) {
-          initial[key] = makeQuestions(defaults);
-        }
-      });
-    });
-    return initial;
-  });
+  const [questions, setQuestions] = useState({});
 
   // ============================================================
   // Derived values
@@ -141,6 +66,24 @@ const PrepTab = ({ data }) => {
   const activeQuestionId =
     typeof currentView === "object" ? currentView.questionId : null;
   const activeQuestion = currentQuestions.find((q) => q.id === activeQuestionId);
+
+  // Fetch questions from backend whenever the active role/category/position changes
+  useEffect(() => {
+    if (!activeRoleId || !effectiveCatId) return;
+    // Only fetch if not already loaded
+    if (questions[currentKey]) return;
+    fetchQuestions(activeRoleId, effectiveCatId, activePositionKey)
+      .then((data) => {
+        const mapped = data.map((q) => ({
+          id: q.id,
+          question: q.text,
+          answers: (q.answers || []).map((a) => ({ id: a.id, label: a.label, content: a.content })),
+          practices: [],
+        }));
+        setQuestions((prev) => ({ ...prev, [currentKey]: mapped }));
+      })
+      .catch(() => {});
+  }, [currentKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ============================================================
   // Tab change handlers — reset view to table when switching
@@ -195,32 +138,135 @@ const PrepTab = ({ data }) => {
     setCurrentView("table");
   };
 
-  // --- Question list updates ---
+  // --- Question list updates (used for reorder and answer saves — local only) ---
   const handleUpdateQuestions = (newList) => {
     if (!currentKey) return;
     setQuestions((prev) => ({ ...prev, [currentKey]: newList }));
   };
 
-  // --- Answer page: update answers for a specific question ---
-  const handleUpdateAnswers = (newAnswers) => {
-    if (!currentKey || !activeQuestionId) return;
+  // --- Add question — persists to backend ---
+  const handleAddQuestion = async (text) => {
+    if (!currentKey || !activeRoleId || !effectiveCatId) return;
+    try {
+      const created = await addQuestion(activeRoleId, effectiveCatId, activePositionKey, text);
+      const newQ = { id: created.id, question: created.text, answers: [], practices: [] };
+      setQuestions((prev) => ({
+        ...prev,
+        [currentKey]: [newQ, ...(prev[currentKey] || [])],
+      }));
+    } catch (err) {
+      console.error("Failed to add question:", err);
+    }
+  };
+
+  // --- Delete question — persists to backend ---
+  const handleDeleteQuestion = async (questionId) => {
+    if (!currentKey) return;
+    try {
+      await deleteQuestion(questionId);
+    } catch (err) {
+      console.error("Failed to delete question:", err);
+    }
     setQuestions((prev) => ({
       ...prev,
-      [currentKey]: prev[currentKey].map((q) =>
-        q.id === activeQuestionId ? { ...q, answers: newAnswers } : q
+      [currentKey]: (prev[currentKey] || []).filter((q) => q.id !== questionId),
+    }));
+    if (activeQuestionId === questionId) setCurrentView("table");
+  };
+
+  // --- Helper to update a single question's field in state ---
+  const _updateQuestion = (questionId, patch) => {
+    if (!currentKey) return;
+    setQuestions((prev) => ({
+      ...prev,
+      [currentKey]: (prev[currentKey] || []).map((q) =>
+        q.id === questionId ? { ...q, ...patch } : q
       ),
     }));
   };
 
-  // --- Practice page: update practices for a specific question ---
+  // --- Answer handlers (backend + local state) ---
+  const handleAddAnswer = async (questionId, label, content) => {
+    try {
+      const created = await addAnswer(questionId, label, content);
+      _updateQuestion(questionId, {
+        answers: [...(currentQuestions.find((q) => q.id === questionId)?.answers || []), created],
+      });
+    } catch (err) {
+      console.error("Failed to add answer:", err);
+    }
+  };
+
+  const handleUpdateAnswer = async (questionId, answerId, label, content) => {
+    try {
+      await updateAnswer(answerId, label, content);
+      _updateQuestion(questionId, {
+        answers: (currentQuestions.find((q) => q.id === questionId)?.answers || []).map((a) =>
+          a.id === answerId ? { ...a, label, content } : a
+        ),
+      });
+    } catch (err) {
+      console.error("Failed to update answer:", err);
+    }
+  };
+
+  const handleDeleteAnswer = async (questionId, answerId) => {
+    try {
+      await deleteAnswer(answerId);
+    } catch (err) {
+      console.error("Failed to delete answer:", err);
+    }
+    _updateQuestion(questionId, {
+      answers: (currentQuestions.find((q) => q.id === questionId)?.answers || []).filter(
+        (a) => a.id !== answerId
+      ),
+    });
+  };
+
+  // --- Practice handlers (backend + local state) ---
+  const handleAddPractice = async (questionId, tag, duration, transcript) => {
+    try {
+      const created = await addPractice(questionId, tag, duration, transcript);
+      const practice = {
+        id: created.id,
+        tag: created.tag,
+        duration: created.duration,
+        transcript: created.transcript,
+        aiFeedback: null,
+        createdAt: created.created_at,
+      };
+      _updateQuestion(questionId, {
+        practices: [practice, ...(currentQuestions.find((q) => q.id === questionId)?.practices || [])],
+      });
+      return practice;
+    } catch (err) {
+      console.error("Failed to save practice:", err);
+      return null;
+    }
+  };
+
+  const handleDeletePractice = async (questionId, practiceId) => {
+    try {
+      await deletePractice(practiceId);
+    } catch (err) {
+      console.error("Failed to delete practice:", err);
+    }
+    _updateQuestion(questionId, {
+      practices: (currentQuestions.find((q) => q.id === questionId)?.practices || []).filter(
+        (p) => p.id !== practiceId
+      ),
+    });
+  };
+
+  // --- Legacy: local-only updates used by answer/practice pages for non-persisted changes ---
+  const handleUpdateAnswers = (newAnswers) => {
+    if (!currentKey || !activeQuestionId) return;
+    _updateQuestion(activeQuestionId, { answers: newAnswers });
+  };
+
   const handleUpdatePractices = (newPractices) => {
     if (!currentKey || !activeQuestionId) return;
-    setQuestions((prev) => ({
-      ...prev,
-      [currentKey]: prev[currentKey].map((q) =>
-        q.id === activeQuestionId ? { ...q, practices: newPractices } : q
-      ),
-    }));
+    _updateQuestion(activeQuestionId, { practices: newPractices });
   };
 
   // --- Navigation ---
@@ -260,6 +306,10 @@ const PrepTab = ({ data }) => {
               <PrepTable
                 questions={currentQuestions}
                 onUpdateQuestions={handleUpdateQuestions}
+                onAddQuestion={handleAddQuestion}
+                onDeleteQuestion={handleDeleteQuestion}
+                onAddAnswer={(questionId, label, content) => handleAddAnswer(questionId, label, content)}
+                onDeleteAnswer={(questionId, answerId) => handleDeleteAnswer(questionId, answerId)}
                 onOpenAnswerPage={handleOpenAnswerPage}
                 onOpenPracticePage={handleOpenPracticePage}
               />
@@ -278,6 +328,9 @@ const PrepTab = ({ data }) => {
             roles={roles}
             positions={positions}
             onUpdateAnswers={handleUpdateAnswers}
+            onAddAnswer={(label, content) => handleAddAnswer(activeQuestion.id, label, content)}
+            onUpdateAnswer={(answerId, label, content) => handleUpdateAnswer(activeQuestion.id, answerId, label, content)}
+            onDeleteAnswer={(answerId) => handleDeleteAnswer(activeQuestion.id, answerId)}
             onBack={() => setCurrentView("table")}
             onNavigate={(id) => setCurrentView({ page: "answer", questionId: id })}
           />
@@ -287,6 +340,8 @@ const PrepTab = ({ data }) => {
             question={activeQuestion}
             questions={currentQuestions}
             onUpdatePractices={handleUpdatePractices}
+            onAddPractice={(tag, duration, transcript) => handleAddPractice(activeQuestion.id, tag, duration, transcript)}
+            onDeletePractice={(practiceId) => handleDeletePractice(activeQuestion.id, practiceId)}
             onBack={() => setCurrentView("table")}
             onNavigate={(id) => setCurrentView({ page: "practice", questionId: id })}
           />

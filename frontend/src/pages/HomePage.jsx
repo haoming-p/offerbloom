@@ -5,9 +5,9 @@ import DashboardTab from "../components/homepage/DashboardTab";
 import PositionsTab from "../components/homepage/PositionsTab";
 import FilesTab from "../components/homepage/filetab/FilesTab";
 import PrepTab from "../components/homepage/preptab/PrepTab";
-// import MeTab from "../components/homepage/MeTab";
+import MeTab from "../components/homepage/MeTab";
 
-const HomePage = ({ data }) => {
+const HomePage = ({ data, user, onLogout }) => {
   // Which sidebar tab is active
   const [activeTab, setActiveTab] = useState("dashboard");
 
@@ -40,8 +40,8 @@ const HomePage = ({ data }) => {
         return <FilesTab data={data} />;
       case "prep":
        return <PrepTab data={data} />;
-      // case "me":
-      //   return <MeTab data={data} />;
+      case "me":
+        return <MeTab user={user} onLogout={onLogout} />;
       default:
         return (
           <div className="flex-1 flex items-center justify-center text-gray-300 text-lg">

@@ -8,7 +8,7 @@ import React, { useState } from "react";
 // - onUpdateAnswers: function to save updated answers for this question
 // - onBack: return to table view
 // - onNavigate: switch to a different question by id
-const AnswerPage = ({ question, questions, roles, positions, onUpdateAnswers, onBack, onNavigate }) => {
+const AnswerPage = ({ question, questions, roles, positions, onUpdateAnswers, onAddAnswer, onUpdateAnswer, onDeleteAnswer, onBack, onNavigate }) => {
 
   // --- Answer card expand/collapse ---
   // Tracks which answer card is expanded (by answer id), null = all collapsed
@@ -62,13 +62,17 @@ const AnswerPage = ({ question, questions, roles, positions, onUpdateAnswers, on
 
   const handleSaveEdit = () => {
     if (!editContent.trim()) return;
-    onUpdateAnswers(
-      question.answers.map((a) =>
-        a.id === editingId
-          ? { ...a, label: editLabel.trim() || a.label, content: editContent.trim() }
-          : a
-      )
-    );
+    const label = editLabel.trim() || question.answers.find((a) => a.id === editingId)?.label || "";
+    const content = editContent.trim();
+    if (onUpdateAnswer) {
+      onUpdateAnswer(editingId, label, content);
+    } else {
+      onUpdateAnswers(
+        question.answers.map((a) =>
+          a.id === editingId ? { ...a, label, content } : a
+        )
+      );
+    }
     setEditingId(null);
   };
 
@@ -79,23 +83,29 @@ const AnswerPage = ({ question, questions, roles, positions, onUpdateAnswers, on
   };
 
   const handleDeleteAnswer = (answerId) => {
-    onUpdateAnswers(question.answers.filter((a) => a.id !== answerId));
+    if (onDeleteAnswer) {
+      onDeleteAnswer(answerId);
+    } else {
+      onUpdateAnswers(question.answers.filter((a) => a.id !== answerId));
+    }
     if (expandedId === answerId) setExpandedId(null);
     if (editingId === answerId) setEditingId(null);
   };
 
-  const handleAddAnswer = () => {
+  const handleAddAnswer = async () => {
     if (!newContent.trim()) return;
-    const newAnswer = {
-      id: `${Date.now()}-${Math.random()}`,
-      label: newLabel.trim() || `Version ${question.answers.length + 1}`,
-      content: newContent.trim(),
-    };
-    onUpdateAnswers([...question.answers, newAnswer]);
+    const label = newLabel.trim() || `Version ${question.answers.length + 1}`;
+    const content = newContent.trim();
     setNewLabel("");
     setNewContent("");
     setShowAddForm(false);
-    setExpandedId(newAnswer.id); // expand the newly added one
+    if (onAddAnswer) {
+      await onAddAnswer(label, content);
+    } else {
+      const newAnswer = { id: `${Date.now()}-${Math.random()}`, label, content };
+      onUpdateAnswers([...question.answers, newAnswer]);
+      setExpandedId(newAnswer.id);
+    }
   };
 
   // ============================================================
