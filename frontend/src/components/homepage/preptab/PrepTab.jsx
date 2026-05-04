@@ -23,11 +23,11 @@ const DEFAULT_CATEGORIES = {
 
 const makeKey = (roleId, posKey, catId) => `${roleId}-${posKey}-${catId}`;
 
-const PrepTab = ({ data }) => {
+const PrepTab = ({ data, defaultRoleId }) => {
   const { roles = [], positions = [] } = data || {};
 
   // --- Active selections ---
-  const [activeRoleId, setActiveRoleId] = useState(roles[0]?.id || "");
+  const [activeRoleId, setActiveRoleId] = useState(defaultRoleId || roles[0]?.id || "");
   const [activePositionKey, setActivePositionKey] = useState("general");
   const [activeCategoryId, setActiveCategoryId] = useState(null);
 

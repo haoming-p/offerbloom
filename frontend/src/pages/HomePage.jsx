@@ -10,6 +10,7 @@ import MeTab from "../components/homepage/MeTab";
 const HomePage = ({ data, user, onLogout, onUpdatePositionsData }) => {
   // Which sidebar tab is active
   const [activeTab, setActiveTab] = useState("dashboard");
+  const [prepDefaultRole, setPrepDefaultRole] = useState(null);
 
   // Toggle between real dashboard and raw JSON data view
   const [showDebug, setShowDebug] = useState(false);
@@ -33,13 +34,13 @@ const HomePage = ({ data, user, onLogout, onUpdatePositionsData }) => {
     // Normal tab rendering
     switch (activeTab) {
       case "dashboard":
-        return <DashboardTab data={data} />;
+        return <DashboardTab data={data} onNavigateToPrep={(roleId) => { setPrepDefaultRole(roleId); setActiveTab("prep"); }} />;
       case "positions":
         return <PositionsTab data={data} onUpdatePositionsData={onUpdatePositionsData} />;
       case "files":
         return <FilesTab data={data} />;
       case "prep":
-       return <PrepTab data={data} />;
+        return <PrepTab data={data} defaultRoleId={prepDefaultRole} />;
       case "me":
         return <MeTab user={user} onLogout={onLogout} />;
       default:

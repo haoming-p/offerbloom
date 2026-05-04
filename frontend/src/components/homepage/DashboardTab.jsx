@@ -1,7 +1,7 @@
 import React from "react";
 import ChatBot from "./ChatBot";
 
-const DashboardTab = ({ data }) => {
+const DashboardTab = ({ data, onNavigateToPrep }) => {
   const { roles = [], positions = [], files = [] } = data || {};
 
   const hasFile = (positionId) => {
@@ -31,8 +31,8 @@ const DashboardTab = ({ data }) => {
             return (
               <div key={role.id} className="flex gap-3 items-start overflow-x-auto">
                 {/* Role card */}
-                {/* TODO: change for further development — click to navigate to Prep filtered by role */}
                 <button
+                  onClick={() => onNavigateToPrep?.(role.id)}
                   className="flex-shrink-0 w-48 h-30 p-4 bg-white border border-gray-200 rounded-xl
                     hover:border-orange-400 hover:bg-orange-50 cursor-pointer transition-all text-left"
                 >
@@ -55,9 +55,9 @@ const DashboardTab = ({ data }) => {
 
                 {/* Position cards */}
                 {rolePositions.map((pos) => (
-                  // TODO: change for further development — click to navigate to Prep filtered by position
                   <button
                     key={pos.id}
+                    onClick={() => onNavigateToPrep?.(role.id)}
                     className="flex-shrink-0 w-52 h-30 p-4 bg-white border border-gray-200 rounded-xl
                       hover:border-orange-400 hover:bg-orange-50 cursor-pointer transition-all text-left"
                   >
