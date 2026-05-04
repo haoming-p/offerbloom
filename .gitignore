@@ -3,6 +3,12 @@ node_modules/
 frontend/dist/
 frontend/build/
 
+# === Mobile (Expo + React Native) ===
+mobile/node_modules/
+mobile/.expo/
+mobile/dist/
+mobile/build/
+
 # === Backend (FastAPI + Python) ===
 __pycache__/
 *.pyc
