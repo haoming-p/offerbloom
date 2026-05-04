@@ -2,7 +2,11 @@ import { useState, useEffect } from "react";
 import HelloPage from "./pages/HelloPage";
 import OnboardingPage from "./pages/OnboardingPage";
 import HomePage from "./pages/HomePage";
-import { getToken, getMe, removeToken } from "./services/auth";
+import { getToken, getMe, removeToken, register, saveToken } from "./services/auth";
+import { saveOnboarding } from "./services/onboarding";
+
+const DEMO_ROLE = { id: "pm", label: "Product Manager", emoji: "🎯", desc: "" };
+const DEMO_DATA = { roles: [DEMO_ROLE], positions: [], files: [] };
 
 function App() {
   // "loading" → "hello" → "onboarding" → "home"
@@ -34,6 +38,23 @@ function App() {
     setScreen(isNewUser ? "onboarding" : "home");
   }
 
+  // Guest mode — auto-create account, skip onboarding, land on home with PM role
+  async function handleTryDemo() {
+    setScreen("loading");
+    try {
+      const guestEmail = `guest_${Date.now()}@example.com`;
+      const guestPass = Math.random().toString(36).slice(2) + "Aa1!";
+      const result = await register("Demo User", guestEmail, guestPass);
+      saveToken(result.access_token);
+      await saveOnboarding({ roles: [DEMO_ROLE], positions: [] }).catch(() => {});
+      setUser(result.user);
+      setOnboardingData(DEMO_DATA);
+      setScreen("home");
+    } catch {
+      setScreen("hello");
+    }
+  }
+
   function handleLogout() {
     removeToken();
     setUser(null);
@@ -50,7 +71,7 @@ function App() {
   }
 
   if (screen === "hello") {
-    return <HelloPage onAuthSuccess={handleAuthSuccess} />;
+    return <HelloPage onAuthSuccess={handleAuthSuccess} onTryDemo={handleTryDemo} />;
   }
 
   if (screen === "onboarding") {

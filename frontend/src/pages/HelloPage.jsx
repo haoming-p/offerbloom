@@ -56,7 +56,7 @@ const QuestionColumn = ({ title, questions }) => (
   </div>
 );
 
-const HelloPage = ({ onAuthSuccess }) => {
+const HelloPage = ({ onAuthSuccess, onTryDemo }) => {
   const [showModal, setShowModal] = useState(null); // null | "signin" | "signup"
   const [form, setForm] = useState({ name: "", email: "", password: "" });
   const [error, setError] = useState("");
@@ -130,12 +130,20 @@ const HelloPage = ({ onAuthSuccess }) => {
             Your personalized AI interview companion. Prepare for any role,
             refine your answers, and stand out with confidence.
           </p>
-          <button
-            onClick={() => openModal("signup")}
-            className="mt-2 w-fit px-10 py-4 bg-orange-400 text-white text-lg font-semibold rounded-xl hover:bg-orange-500 cursor-pointer"
-          >
-            Start My Prep
-          </button>
+          <div className="mt-2 flex items-center gap-4">
+            <button
+              onClick={() => openModal("signup")}
+              className="px-10 py-4 bg-orange-400 text-white text-lg font-semibold rounded-xl hover:bg-orange-500 cursor-pointer"
+            >
+              Start My Prep
+            </button>
+            <button
+              onClick={onTryDemo}
+              className="px-6 py-4 text-gray-500 text-base hover:text-gray-700 cursor-pointer underline underline-offset-4"
+            >
+              Try demo →
+            </button>
+          </div>
         </div>
 
         {/* Right: Video placeholder */}
