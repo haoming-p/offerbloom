@@ -1,9 +1,12 @@
 import uuid
 import time
+import json
 from fastapi import APIRouter, HTTPException, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from neo4j import Session
+import anthropic
 
+from config import settings
 from database import get_db
 from models.practice import PracticeOut, PracticeCreate
 from auth.jwt import decode_token
@@ -69,6 +72,74 @@ def create_practice(
         transcript=data.transcript,
         ai_feedback=None,
         created_at=created_at,
+    )
+
+
+@router.patch("/{practice_id}/feedback", response_model=PracticeOut)
+def generate_feedback(
+    practice_id: str,
+    credentials: HTTPAuthorizationCredentials = Depends(bearer),
+    db: Session = Depends(get_db),
+):
+    if not settings.anthropic_api_key:
+        raise HTTPException(status_code=503, detail="AI service not configured")
+
+    user_id = _get_current_user_id(credentials)
+
+    result = db.run(
+        """
+        MATCH (u:User {id: $user_id})-[:HAS_QUESTION]->(q:Question)-[:HAS_PRACTICE]->(p:Practice {id: $p_id})
+        RETURN p
+        """,
+        user_id=user_id,
+        p_id=practice_id,
+    )
+    record = result.single()
+    if not record:
+        raise HTTPException(status_code=404, detail="Practice not found")
+
+    practice = record["p"]
+    transcript = practice.get("transcript", "")
+    if not transcript or transcript.startswith("(Voice transcript"):
+        raise HTTPException(status_code=400, detail="No transcript available for feedback")
+
+    client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
+    message = client.messages.create(
+        model="claude-haiku-4-5-20251001",
+        max_tokens=512,
+        messages=[
+            {
+                "role": "user",
+                "content": (
+                    "You are an interview coach. Evaluate this practice answer transcript.\n\n"
+                    f"Transcript:\n{transcript}\n\n"
+                    "Respond ONLY with valid JSON in this exact format:\n"
+                    '{"score": <1-10>, "strengths": ["...", "...", "..."], "improvements": ["...", "...", "..."]}'
+                ),
+            }
+        ],
+    )
+
+    raw = message.content[0].text.strip()
+    try:
+        feedback = json.loads(raw)
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=500, detail="AI returned invalid response")
+
+    feedback_json = json.dumps(feedback)
+    db.run(
+        "MATCH (p:Practice {id: $p_id}) SET p.ai_feedback = $feedback",
+        p_id=practice_id,
+        feedback=feedback_json,
+    )
+
+    return PracticeOut(
+        id=practice["id"],
+        tag=practice["tag"],
+        duration=practice["duration"],
+        transcript=transcript,
+        ai_feedback=feedback,
+        created_at=practice["created_at"],
     )
 
 

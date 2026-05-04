@@ -1,41 +1,51 @@
-import React from "react";
+import React, { useState } from "react";
+import { uploadFile } from "../../services/files";
 
-// Props:
-// - roles: array of role objects from Step 1, e.g. [{ id: "pm", label: "Product Manager", emoji: "🎯" }]
-// - positions: position objects from Step 2
-// - files: array of file objects
-// - onUpdateFiles: function to replace the entire files array
 const StepFiles = ({ roles, positions, files, onUpdateFiles }) => {
+  const [uploading, setUploading] = useState(false);
 
-  // Build a flat list of all possible link targets
-  // Combines roles + positions into one array for the checkboxes
-  // Now reads labels directly from role objects — no ROLE_LABELS needed
   const linkTargets = [
-    // Role-level targets — use emoji + label from the role object
-    ...roles.map((role) => ({
-      id: role.id,
-      label: `${role.emoji} ${role.label}`,
-    })),
-    // Position-level targets — build label from position data
+    ...roles.map((role) => ({ id: role.id, label: `${role.emoji} ${role.label}` })),
     ...positions.map((pos) => ({
       id: `pos-${pos.id}`,
       label: `${pos.title}${pos.company ? ` @ ${pos.company}` : ""}`,
     })),
   ];
 
-  // Handle "file upload" — for demo, just capture file names
-  // TODO: change for further development — upload to backend/storage
-  const handleFileSelect = (e) => {
-    const newFiles = Array.from(e.target.files).map((file) => ({
-      id: Date.now() + Math.random(),
-      name: file.name,
-      linkedTo: [], // no links yet, user will check boxes
-    }));
-    onUpdateFiles([...files, ...newFiles]);
-    e.target.value = "";
+  const guessFileType = (name) => {
+    const lower = name.toLowerCase();
+    if (lower.includes("resume") || lower.includes("cv")) return "resume";
+    if (lower.includes("cover")) return "cover_letter";
+    if (lower.includes("jd") || lower.includes("job")) return "job_description";
+    return "other";
   };
 
-  // Toggle a link on/off for a specific file
+  const handleFileSelect = async (e) => {
+    const selected = Array.from(e.target.files);
+    e.target.value = "";
+    if (!selected.length) return;
+
+    setUploading(true);
+    const uploaded = [];
+    for (const file of selected) {
+      try {
+        const result = await uploadFile(file, guessFileType(file.name));
+        uploaded.push({
+          id: result.id,
+          name: result.name,
+          file_type: result.file_type,
+          size: result.size,
+          url: result.url,
+          linkedTo: [],
+        });
+      } catch {
+        // Skip files that fail to upload
+      }
+    }
+    setUploading(false);
+    if (uploaded.length) onUpdateFiles([...files, ...uploaded]);
+  };
+
   const handleToggleLink = (fileId, targetId) => {
     onUpdateFiles(
       files.map((file) => {
@@ -54,31 +64,28 @@ const StepFiles = ({ roles, positions, files, onUpdateFiles }) => {
 
   return (
     <div>
-      <h2 className="text-xl font-bold text-gray-800 mb-2">
-        Upload your materials
-      </h2>
+      <h2 className="text-xl font-bold text-gray-800 mb-2">Upload your materials</h2>
       <p className="text-gray-400 mb-8">
         Optional — add resumes, cover letters, or notes. Link them to roles or specific positions.
       </p>
 
-      {/* Upload area */}
       <label className="flex flex-col items-center justify-center border-2 border-dashed border-gray-200 rounded-xl p-8 mb-8 cursor-pointer hover:border-gray-300 transition-colors">
-        <span className="text-3xl mb-2">📄</span>
-        <span className="text-gray-500">Click to upload files</span>
-        <span className="text-sm text-gray-300 mt-1">PDF, DOCX, TXT, etc.</span>
+        <span className="text-3xl mb-2">{uploading ? "⏳" : "📄"}</span>
+        <span className="text-gray-500">{uploading ? "Uploading…" : "Click to upload files"}</span>
+        <span className="text-sm text-gray-300 mt-1">PDF, DOCX, TXT — max 10 MB</span>
         <input
           type="file"
           multiple
+          accept=".pdf,.doc,.docx,.txt"
           onChange={handleFileSelect}
+          disabled={uploading}
           className="hidden"
         />
       </label>
 
-      {/* File list with link checkboxes */}
       <div className="max-h-64 overflow-y-auto show-scrollbar pr-2">
         {files.map((file) => (
           <div key={file.id} className="bg-gray-50 rounded-xl p-4 mb-4">
-            {/* File name and remove button */}
             <div className="flex items-center justify-between mb-3">
               <span className="font-medium text-gray-700">📄 {file.name}</span>
               <button
@@ -89,7 +96,6 @@ const StepFiles = ({ roles, positions, files, onUpdateFiles }) => {
               </button>
             </div>
 
-            {/* Link checkboxes — roles and positions as toggle chips */}
             <div className="flex flex-wrap gap-3">
               {linkTargets.map((target) => (
                 <label

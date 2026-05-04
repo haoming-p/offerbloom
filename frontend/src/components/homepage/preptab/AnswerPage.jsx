@@ -1,4 +1,5 @@
-import React, { useState } from "react";
+import React, { useState, useRef, useEffect } from "react";
+import { sendChatMessage } from "../../../services/chat";
 
 // Props:
 // - question: current question object { id, question, answers }
@@ -35,6 +36,12 @@ const AnswerPage = ({ question, questions, roles, positions, onUpdateAnswers, on
     },
   ]);
   const [chatInput, setChatInput] = useState("");
+  const [chatLoading, setChatLoading] = useState(false);
+  const chatBottomRef = useRef(null);
+
+  useEffect(() => {
+    chatBottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [chatMessages]);
 
   // --- Prev/Next navigation ---
   const currentIndex = questions.findIndex((q) => q.id === question.id);
@@ -112,11 +119,26 @@ const AnswerPage = ({ question, questions, roles, positions, onUpdateAnswers, on
   // AI Chat handlers
   // ============================================================
 
-  const handleChatSend = () => {
-    if (!chatInput.trim()) return;
-    setChatMessages([...chatMessages, { sender: "user", text: chatInput.trim() }]);
+  const handleChatSend = async () => {
+    const text = chatInput.trim();
+    if (!text || chatLoading) return;
+    const updated = [...chatMessages, { sender: "user", text }];
+    setChatMessages(updated);
     setChatInput("");
-    // TODO: change for further development — send to LLM, get real response
+    setChatLoading(true);
+    try {
+      const reply = await sendChatMessage({
+        message: text,
+        context: "answer_draft",
+        contextData: `Interview question: "${question.question}"`,
+        history: chatMessages,
+      });
+      setChatMessages([...updated, { sender: "bot", text: reply }]);
+    } catch {
+      setChatMessages([...updated, { sender: "bot", text: "Sorry, couldn't connect. Try again." }]);
+    } finally {
+      setChatLoading(false);
+    }
   };
 
   const handleChatKeyDown = (e) => {
@@ -320,7 +342,6 @@ const AnswerPage = ({ question, questions, roles, positions, onUpdateAnswers, on
           {/* Chat header */}
           <div className="px-5 py-3 border-b border-gray-100">
             <span className="text-sm font-semibold text-gray-700">✨ AI Draft</span>
-            <span className="text-xs text-gray-400 ml-2">Coming soon</span>
           </div>
 
           {/* Messages */}
@@ -341,13 +362,14 @@ const AnswerPage = ({ question, questions, roles, positions, onUpdateAnswers, on
                 </div>
               </div>
             ))}
-
-            {/* AI coming soon notice */}
-            <div className="text-center py-4">
-              <span className="text-xs text-gray-300 bg-gray-100 px-3 py-1 rounded-full">
-                🤖 AI responses coming soon — type to preview the chat flow
-              </span>
-            </div>
+            {chatLoading && (
+              <div className="flex justify-start">
+                <div className="bg-white px-4 py-2.5 rounded-xl text-sm text-gray-400 rounded-bl-none border border-gray-100">
+                  typing…
+                </div>
+              </div>
+            )}
+            <div ref={chatBottomRef} />
           </div>
 
           {/* Input */}
@@ -357,12 +379,14 @@ const AnswerPage = ({ question, questions, roles, positions, onUpdateAnswers, on
               value={chatInput}
               onChange={(e) => setChatInput(e.target.value)}
               onKeyDown={handleChatKeyDown}
+              disabled={chatLoading}
               placeholder="Ask AI to draft an answer..."
               className="flex-1 border border-gray-200 rounded-lg px-4 py-2 text-sm placeholder-gray-300 bg-white"
             />
             <button
               onClick={handleChatSend}
-              className="px-4 py-2 bg-orange-400 text-white rounded-lg hover:bg-orange-500 cursor-pointer text-sm"
+              disabled={chatLoading}
+              className="px-4 py-2 bg-orange-400 text-white rounded-lg hover:bg-orange-500 cursor-pointer text-sm disabled:opacity-50"
             >
               Send
             </button>

@@ -4,27 +4,32 @@ import OnboardingPage from "./pages/OnboardingPage";
 import HomePage from "./pages/HomePage";
 import { getToken, getMe, removeToken, register, saveToken } from "./services/auth";
 import { saveOnboarding } from "./services/onboarding";
+import { getUserData, saveUserData } from "./services/user_data";
 
 const DEMO_ROLE = { id: "pm", label: "Product Manager", emoji: "🎯", desc: "" };
-const DEMO_DATA = { roles: [DEMO_ROLE], positions: [], files: [] };
+const DEMO_DATA = { roles: [DEMO_ROLE], positions: [], statuses: [], files: [] };
 
 function App() {
-  // "loading" → "hello" → "onboarding" → "home"
   const [screen, setScreen] = useState("loading");
   const [user, setUser] = useState(null);
-  const [onboardingData, setOnboardingData] = useState(null);
+  const [appData, setAppData] = useState(null);
 
-  // On mount: check for a saved token and validate it
   useEffect(() => {
     const token = getToken();
     if (!token) {
       setScreen("hello");
       return;
     }
-    getMe(token)
-      .then((me) => {
+    Promise.all([getMe(token), getUserData()])
+      .then(([me, data]) => {
         setUser(me);
-        setScreen("home"); // returning user — skip onboarding
+        setAppData({
+          roles: data.roles || [],
+          positions: data.positions || [],
+          statuses: data.statuses || [],
+          files: [],
+        });
+        setScreen("home");
       })
       .catch(() => {
         removeToken();
@@ -32,13 +37,28 @@ function App() {
       });
   }, []);
 
-  // Called by HelloPage after successful register (new user) or login (returning user)
   function handleAuthSuccess(userData, isNewUser) {
     setUser(userData);
-    setScreen(isNewUser ? "onboarding" : "home");
+    if (isNewUser) {
+      setScreen("onboarding");
+    } else {
+      getUserData()
+        .then((data) => {
+          setAppData({
+            roles: data.roles || [],
+            positions: data.positions || [],
+            statuses: data.statuses || [],
+            files: [],
+          });
+          setScreen("home");
+        })
+        .catch(() => {
+          setAppData(DEMO_DATA);
+          setScreen("home");
+        });
+    }
   }
 
-  // Guest mode — auto-create account, skip onboarding, land on home with PM role
   async function handleTryDemo() {
     setScreen("loading");
     try {
@@ -48,7 +68,7 @@ function App() {
       saveToken(result.access_token);
       await saveOnboarding({ roles: [DEMO_ROLE], positions: [] }).catch(() => {});
       setUser(result.user);
-      setOnboardingData(DEMO_DATA);
+      setAppData(DEMO_DATA);
       setScreen("home");
     } catch {
       setScreen("hello");
@@ -58,8 +78,18 @@ function App() {
   function handleLogout() {
     removeToken();
     setUser(null);
-    setOnboardingData(null);
+    setAppData(null);
     setScreen("hello");
+  }
+
+  async function handleUpdatePositionsData({ roles, positions, statuses }) {
+    const updated = { ...appData, roles, positions, statuses };
+    setAppData(updated);
+    try {
+      await saveUserData({ roles, positions, statuses });
+    } catch {
+      // Silently fail — local state already updated
+    }
   }
 
   if (screen === "loading") {
@@ -79,14 +109,27 @@ function App() {
       <OnboardingPage
         user={user}
         onComplete={(data) => {
-          setOnboardingData(data);
+          const d = {
+            roles: data.roles || [],
+            positions: data.positions || [],
+            statuses: [],
+            files: data.files || [],
+          };
+          setAppData(d);
           setScreen("home");
         }}
       />
     );
   }
 
-  return <HomePage data={onboardingData} user={user} onLogout={handleLogout} />;
+  return (
+    <HomePage
+      data={appData}
+      user={user}
+      onLogout={handleLogout}
+      onUpdatePositionsData={handleUpdatePositionsData}
+    />
+  );
 }
 
 export default App;

@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useRef } from "react";
 
 // ============================================================
 // DEFAULT STATUSES — customizable by user
@@ -24,12 +24,9 @@ const CUSTOM_COLORS = [
   { bg: "bg-teal-50", text: "text-teal-600", dot: "bg-teal-400" },
 ];
 
-const PositionsTab = ({ data }) => {
-  // --- Local state ---
-  // TODO: change for further development — lift state to App.jsx for cross-tab sync
+const PositionsTab = ({ data, onUpdatePositionsData }) => {
   const [roles, setRoles] = useState(data?.roles || []);
   const [positions, setPositions] = useState(
-    // Add status and timeline to existing positions
     (data?.positions || []).map((p) => ({
       ...p,
       status: p.status || "new",
@@ -37,7 +34,36 @@ const PositionsTab = ({ data }) => {
     }))
   );
   const files = data?.files || [];
-  const [statuses, setStatuses] = useState(DEFAULT_STATUSES);
+  const [statuses, setStatuses] = useState(
+    data?.statuses?.length ? data.statuses : DEFAULT_STATUSES
+  );
+
+  // Debounced sync to backend
+  const syncTimerRef = useRef(null);
+  const syncToBackend = (newRoles, newPositions, newStatuses) => {
+    if (!onUpdatePositionsData) return;
+    clearTimeout(syncTimerRef.current);
+    syncTimerRef.current = setTimeout(() => {
+      onUpdatePositionsData({ roles: newRoles, positions: newPositions, statuses: newStatuses });
+    }, 800);
+  };
+
+  // Wrapped setters that also trigger sync
+  const updateRoles = (next) => {
+    const val = typeof next === "function" ? next(roles) : next;
+    setRoles(val);
+    syncToBackend(val, positions, statuses);
+  };
+  const updatePositions = (next) => {
+    const val = typeof next === "function" ? next(positions) : next;
+    setPositions(val);
+    syncToBackend(roles, val, statuses);
+  };
+  const updateStatuses = (next) => {
+    const val = typeof next === "function" ? next(statuses) : next;
+    setStatuses(val);
+    syncToBackend(roles, positions, val);
+  };
 
   // --- Active filters ---
   const [activeRoleId, setActiveRoleId] = useState("all");
@@ -119,7 +145,7 @@ const PositionsTab = ({ data }) => {
       emoji: newRoleEmoji || "💼",
       desc: "",
     };
-    setRoles([...roles, newRole]);
+    updateRoles([...roles, newRole]);
     setActiveRoleId(newRole.id);
     setNewRoleLabel("");
     setNewRoleEmoji("💼");
@@ -140,7 +166,7 @@ const PositionsTab = ({ data }) => {
 
   const handleSaveEditRole = () => {
     if (!editRoleLabel.trim()) return;
-    setRoles(roles.map((r) =>
+    updateRoles(roles.map((r) =>
       r.id === editingRoleId
         ? { ...r, label: editRoleLabel.trim(), emoji: editRoleEmoji || r.emoji }
         : r
@@ -155,8 +181,11 @@ const PositionsTab = ({ data }) => {
 
   const handleDeleteRole = (e, roleId) => {
     e.stopPropagation();
-    setRoles(roles.filter((r) => r.id !== roleId));
-    setPositions(positions.filter((p) => p.role !== roleId));
+    const newRoles = roles.filter((r) => r.id !== roleId);
+    const newPositions = positions.filter((p) => p.role !== roleId);
+    setRoles(newRoles);
+    setPositions(newPositions);
+    syncToBackend(newRoles, newPositions, statuses);
     if (activeRoleId === roleId) setActiveRoleId("all");
   };
 
@@ -173,7 +202,7 @@ const PositionsTab = ({ data }) => {
       label: newStatusLabel.trim(),
       ...color,
     };
-    setStatuses([...statuses, newStatus]);
+    updateStatuses([...statuses, newStatus]);
     setNewStatusLabel("");
     setShowAddStatus(false);
   };
@@ -191,7 +220,7 @@ const PositionsTab = ({ data }) => {
 
   const handleSaveEditStatus = () => {
     if (!editStatusLabel.trim()) return;
-    setStatuses(statuses.map((s) =>
+    updateStatuses(statuses.map((s) =>
       s.id === editingStatusId ? { ...s, label: editStatusLabel.trim() } : s
     ));
     setEditingStatusId(null);
@@ -205,10 +234,13 @@ const PositionsTab = ({ data }) => {
   const handleDeleteStatus = (e, statusId) => {
     e.stopPropagation();
     // Move positions with this status to "new"
-    setPositions(positions.map((p) =>
+    const newPositions = positions.map((p) =>
       p.status === statusId ? { ...p, status: "new" } : p
-    ));
-    setStatuses(statuses.filter((s) => s.id !== statusId));
+    );
+    const newStatuses = statuses.filter((s) => s.id !== statusId);
+    setPositions(newPositions);
+    setStatuses(newStatuses);
+    syncToBackend(roles, newPositions, newStatuses);
     if (activeStatusFilter === statusId) setActiveStatusFilter("all");
   };
 
@@ -229,7 +261,7 @@ const PositionsTab = ({ data }) => {
       status: "new",
       timeline: [],
     };
-    setPositions([...positions, newPos]);
+    updatePositions([...positions, newPos]);
     setNewPosTitle("");
     setNewPosCompany("");
     setNewPosJd("");
@@ -248,7 +280,7 @@ const PositionsTab = ({ data }) => {
 
   const handleSaveEditPosition = () => {
     if (!editPosTitle.trim()) return;
-    setPositions(positions.map((p) =>
+    updatePositions(positions.map((p) =>
       p.id === editingPosId
         ? { ...p, title: editPosTitle.trim(), company: editPosCompany.trim(), jd: editPosJd.trim() }
         : p
@@ -257,11 +289,11 @@ const PositionsTab = ({ data }) => {
   };
 
   const handleDeletePosition = (posId) => {
-    setPositions(positions.filter((p) => p.id !== posId));
+    updatePositions(positions.filter((p) => p.id !== posId));
   };
 
   const handleChangeStatus = (posId, newStatusId) => {
-    setPositions(positions.map((p) =>
+    updatePositions(positions.map((p) =>
       p.id === posId ? { ...p, status: newStatusId } : p
     ));
     setOpenStatusDropdownId(null);
@@ -279,7 +311,7 @@ const PositionsTab = ({ data }) => {
       event: newTimelineEvent.trim(),
       notes: newTimelineNotes.trim(),
     };
-    setPositions(positions.map((p) =>
+    updatePositions(positions.map((p) =>
       p.id === posId
         ? { ...p, timeline: [entry, ...(p.timeline || [])] }
         : p
@@ -291,7 +323,7 @@ const PositionsTab = ({ data }) => {
   };
 
   const handleDeleteTimelineEntry = (posId, entryId) => {
-    setPositions(positions.map((p) =>
+    updatePositions(positions.map((p) =>
       p.id === posId
         ? { ...p, timeline: p.timeline.filter((t) => t.id !== entryId) }
         : p

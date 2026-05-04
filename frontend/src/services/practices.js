@@ -14,6 +14,17 @@ export async function addPractice(questionId, tag, duration, transcript = "") {
   return data; // { id, tag, duration, transcript, ai_feedback, created_at }
 }
 
+export async function requestFeedback(practiceId) {
+  const token = getToken();
+  const res = await fetch(`${API_URL}/practices/${practiceId}/feedback`, {
+    method: "PATCH",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.detail || "Failed to get feedback");
+  return data; // full PracticeOut with ai_feedback populated
+}
+
 export async function deletePractice(practiceId) {
   const token = getToken();
   const res = await fetch(`${API_URL}/practices/${practiceId}`, {

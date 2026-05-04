@@ -7,7 +7,7 @@ import FilesTab from "../components/homepage/filetab/FilesTab";
 import PrepTab from "../components/homepage/preptab/PrepTab";
 import MeTab from "../components/homepage/MeTab";
 
-const HomePage = ({ data, user, onLogout }) => {
+const HomePage = ({ data, user, onLogout, onUpdatePositionsData }) => {
   // Which sidebar tab is active
   const [activeTab, setActiveTab] = useState("dashboard");
 
@@ -35,7 +35,7 @@ const HomePage = ({ data, user, onLogout }) => {
       case "dashboard":
         return <DashboardTab data={data} />;
       case "positions":
-        return <PositionsTab data={data} />;
+        return <PositionsTab data={data} onUpdatePositionsData={onUpdatePositionsData} />;
       case "files":
         return <FilesTab data={data} />;
       case "prep":

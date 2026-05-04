@@ -13,11 +13,14 @@ class Settings(BaseSettings):
     frontend_url: str = "http://localhost:5173"
 
     # Cloudflare R2
-    r2_account_id: str = ""
+    cloudflare_account_id: str = ""
+    r2_endpoint: str = ""
     r2_access_key_id: str = ""
     r2_secret_access_key: str = ""
     r2_bucket_name: str = "offerbloom-files"
-    r2_public_url: str = ""  # e.g. https://pub-xxxx.r2.dev or your custom domain
+    r2_public_url: str = ""
+
+    anthropic_api_key: str = ""
 
     class Config:
         env_file = ".env"
