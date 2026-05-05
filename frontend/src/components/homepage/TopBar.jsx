@@ -4,11 +4,14 @@ import React from "react";
 // - roles: array of role objects to show as badges
 // - showDebug: boolean, whether debug mode is on
 // - onToggleDebug: function to toggle debug mode
-const TopBar = ({ showDebug, onToggleDebug }) => {
+const TopBar = ({ showDebug, onToggleDebug, onLogoClick }) => {
   return (
     <div className="flex items-center justify-between px-6 py-3 bg-white border-b border-gray-200">
       {/* Left: Logo */}
-      <span className="text-xl font-bold text-orange-400">OfferBloom</span>
+      <span
+        className="text-xl font-bold text-orange-400 cursor-pointer"
+        onClick={onLogoClick}
+      >OfferBloom</span>
 
       {/* Right: Debug toggle + placeholder user area */}
       <div className="flex items-center gap-4">

@@ -73,10 +73,52 @@ def _get_current_user_id(credentials: HTTPAuthorizationCredentials) -> str:
 
 
 def _seed_defaults(db: Session, user_id: str, role_id: str, category_id: str, position_key: str):
-    """Seed default questions for a role+category combo if none exist yet."""
+    """Seed questions from PreloadedQuestion pool; fallback to hardcoded defaults."""
+    preloaded = db.run(
+        """
+        MATCH (q:PreloadedQuestion {role_id: $role_id, category_id: $category_id})
+        RETURN q ORDER BY q.difficulty ASC LIMIT 10
+        """,
+        role_id=role_id,
+        category_id=category_id,
+    ).data()
+
+    if preloaded:
+        for i, row in enumerate(preloaded):
+            pq = row["q"]
+            q_id = str(uuid.uuid4())
+            db.run(
+                """
+                MATCH (u:User {id: $user_id})
+                CREATE (q:Question {
+                    id: $id,
+                    text: $text,
+                    role_id: $role_id,
+                    category_id: $category_id,
+                    position_key: $position_key,
+                    order: $order,
+                    difficulty: $difficulty,
+                    experience: $experience,
+                    ideal_answer: $ideal_answer
+                })
+                CREATE (u)-[:HAS_QUESTION]->(q)
+                """,
+                user_id=user_id,
+                id=q_id,
+                text=pq["text"],
+                role_id=role_id,
+                category_id=category_id,
+                position_key=position_key,
+                order=i,
+                difficulty=pq.get("difficulty", ""),
+                experience=pq.get("experience", ""),
+                ideal_answer=pq.get("ideal_answer", ""),
+            )
+        return
+
+    # Fallback: hardcoded defaults for technical categories not in Kaggle pool
     key = f"{role_id}-{category_id}"
-    defaults = DEFAULT_QUESTIONS.get(key, [])
-    for i, text in enumerate(defaults):
+    for i, text in enumerate(DEFAULT_QUESTIONS.get(key, [])):
         q_id = str(uuid.uuid4())
         db.run(
             """
@@ -87,7 +129,10 @@ def _seed_defaults(db: Session, user_id: str, role_id: str, category_id: str, po
                 role_id: $role_id,
                 category_id: $category_id,
                 position_key: $position_key,
-                order: $order
+                order: $order,
+                difficulty: '',
+                experience: '',
+                ideal_answer: ''
             })
             CREATE (u)-[:HAS_QUESTION]->(q)
             """,
@@ -174,6 +219,9 @@ def list_questions(
             category_id=r["q"]["category_id"],
             position_key=r["q"]["position_key"],
             order=r["q"]["order"],
+            difficulty=r["q"].get("difficulty", ""),
+            experience=r["q"].get("experience", ""),
+            ideal_answer=r["q"].get("ideal_answer", ""),
             answers=answers_by_q.get(r["q"]["id"], []),
         )
         for r in records

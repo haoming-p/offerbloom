@@ -12,6 +12,9 @@ class QuestionOut(BaseModel):
     category_id: str
     position_key: str
     order: int
+    difficulty: str = ""
+    experience: str = ""
+    ideal_answer: str = ""
     answers: list = []
 
 

@@ -59,6 +59,7 @@ const HomePage = ({ data, user, onLogout, onUpdatePositionsData }) => {
         roles={data?.roles || []}
         showDebug={showDebug}
         onToggleDebug={() => setShowDebug(!showDebug)}
+        onLogoClick={() => setActiveTab("dashboard")}
       />
 
       {/* Body: Sidebar + Content */}
