@@ -10,6 +10,7 @@ from routers.answers import router as answers_router
 from routers.practices import router as practices_router
 from routers.chat import router as chat_router
 from routers.user_data import router as user_data_router
+from routers.public import router as public_router
 
 app = FastAPI(title="OfferBloom API")
 
@@ -29,6 +30,7 @@ app.include_router(answers_router)
 app.include_router(practices_router)
 app.include_router(chat_router)
 app.include_router(user_data_router)
+app.include_router(public_router)
 
 
 @app.get("/health")

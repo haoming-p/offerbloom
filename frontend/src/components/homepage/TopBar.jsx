@@ -4,7 +4,7 @@ import React from "react";
 // - roles: array of role objects to show as badges
 // - showDebug: boolean, whether debug mode is on
 // - onToggleDebug: function to toggle debug mode
-const TopBar = ({ showDebug, onToggleDebug, onLogoClick }) => {
+const TopBar = ({ showDebug, onToggleDebug, onLogoClick, onNavClick }) => {
   return (
     <div className="flex items-center justify-between px-6 py-3 bg-white border-b border-gray-200">
       {/* Left: Logo */}
@@ -12,6 +12,18 @@ const TopBar = ({ showDebug, onToggleDebug, onLogoClick }) => {
         className="text-xl font-bold text-orange-400 cursor-pointer"
         onClick={onLogoClick}
       >OfferBloom</span>
+
+      {/* Center: Nav links */}
+      <div className="flex gap-6 text-sm text-gray-500">
+        <button onClick={() => onNavClick?.("resources")} className="cursor-pointer hover:text-gray-800">
+          Interview resources
+        </button>
+        <span className="cursor-default text-gray-300" title="Coming soon">Blog</span>
+        <button onClick={() => onNavClick?.("faq")} className="cursor-pointer hover:text-gray-800">
+          FAQ
+        </button>
+        <span className="cursor-default text-gray-300" title="Coming soon">Button 4</span>
+      </div>
 
       {/* Right: Debug toggle + placeholder user area */}
       <div className="flex items-center gap-4">

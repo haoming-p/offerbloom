@@ -7,7 +7,7 @@ import FilesTab from "../components/homepage/filetab/FilesTab";
 import PrepTab from "../components/homepage/preptab/PrepTab";
 import MeTab from "../components/homepage/MeTab";
 
-const HomePage = ({ data, user, onLogout, onUpdatePositionsData }) => {
+const HomePage = ({ data, user, onLogout, onUpdatePositionsData, onOpenResources }) => {
   // Which sidebar tab is active
   const [activeTab, setActiveTab] = useState("dashboard");
   const [prepDefaultRole, setPrepDefaultRole] = useState(null);
@@ -60,6 +60,9 @@ const HomePage = ({ data, user, onLogout, onUpdatePositionsData }) => {
         showDebug={showDebug}
         onToggleDebug={() => setShowDebug(!showDebug)}
         onLogoClick={() => setActiveTab("dashboard")}
+        onNavClick={(target) => {
+          if (target === "resources") onOpenResources?.();
+        }}
       />
 
       {/* Body: Sidebar + Content */}

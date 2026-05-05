@@ -40,6 +40,24 @@ const dsQuestions = [
   "How would you evaluate a search ranking algorithm?",
 ];
 
+const FaqItem = ({ question, answer }) => {
+  const [open, setOpen] = React.useState(false);
+  return (
+    <div className="border border-gray-200 rounded-xl overflow-hidden">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="w-full flex items-center justify-between px-6 py-4 text-left text-sm font-medium text-gray-800 hover:bg-gray-50 cursor-pointer"
+      >
+        {question}
+        <span className="text-gray-400 ml-4">{open ? "▾" : "▸"}</span>
+      </button>
+      {open && (
+        <div className="px-6 pb-4 text-sm text-gray-500">{answer}</div>
+      )}
+    </div>
+  );
+};
+
 const QuestionColumn = ({ title, questions }) => (
   <div className="bg-white rounded-xl border border-gray-200 p-6 h-140 flex flex-col">
     <h3 className="text-lg font-semibold text-gray-800 mb-4">{title}</h3>
@@ -56,7 +74,7 @@ const QuestionColumn = ({ title, questions }) => (
   </div>
 );
 
-const HelloPage = ({ onAuthSuccess, onTryDemo }) => {
+const HelloPage = ({ onAuthSuccess, onTryDemo, onOpenResources }) => {
   const [showModal, setShowModal] = useState(null); // null | "signin" | "signup"
   const [form, setForm] = useState({ name: "", email: "", password: "" });
   const [error, setError] = useState("");
@@ -94,12 +112,21 @@ const HelloPage = ({ onAuthSuccess, onTryDemo }) => {
       <div className="flex items-center justify-between px-16 py-4 bg-white border-b border-gray-200">
         <span className="text-2xl font-bold text-orange-400">OfferBloom</span>
         <div className="flex items-center gap-24">
-          {/* TODO: change for further development — add real navigation routes */}
           <div className="flex gap-8 text-gray-500">
-            <button className="cursor-pointer hover:text-gray-800">Interview resources</button>
-            <button className="cursor-pointer hover:text-gray-800">Blog</button>
-            <button className="cursor-pointer hover:text-gray-800">FAQ</button>
-            <button className="cursor-pointer hover:text-gray-800">Button 4</button>
+            <button
+              onClick={onOpenResources}
+              className="cursor-pointer hover:text-gray-800"
+            >
+              Interview resources
+            </button>
+            <span className="cursor-default text-gray-300" title="Coming soon">Blog</span>
+            <button
+              onClick={() => document.getElementById("faq-section")?.scrollIntoView({ behavior: "smooth" })}
+              className="cursor-pointer hover:text-gray-800"
+            >
+              FAQ
+            </button>
+            <span className="cursor-default text-gray-300" title="Coming soon">Button 4</span>
           </div>
           <div className="flex gap-3">
             <button
@@ -159,8 +186,7 @@ const HelloPage = ({ onAuthSuccess, onTryDemo }) => {
       </div>
 
       {/* Question Lists */}
-      {/* TODO: change for further development — load questions from backend/QuestionBank */}
-      <div className="px-16 pb-24 max-w-6xl mx-auto">
+      <div id="resources-section" className="px-16 pb-24 max-w-6xl mx-auto">
         <h2 className="text-2xl font-bold text-gray-800 text-center mb-2">
           What will you prepare today?
         </h2>
@@ -171,6 +197,37 @@ const HelloPage = ({ onAuthSuccess, onTryDemo }) => {
           <QuestionColumn title="🎯 PM BQ" questions={pmQuestions} />
           <QuestionColumn title="💻 SDE System Design" questions={sdeQuestions} />
           <QuestionColumn title="📊 Data Science" questions={dsQuestions} />
+        </div>
+      </div>
+
+      {/* FAQ Section */}
+      <div id="faq-section" className="px-16 py-20 max-w-4xl mx-auto w-full">
+        <h2 className="text-2xl font-bold text-gray-800 text-center mb-10">Frequently Asked Questions</h2>
+        <div className="flex flex-col gap-4">
+          {[
+            {
+              q: "What roles does OfferBloom support?",
+              a: "Product Manager, Software Engineer, Data Scientist, and more. Role-specific question banks are preloaded for each.",
+            },
+            {
+              q: "Is my data private?",
+              a: "Yes. Your answers and practice sessions are only visible to you. We never share your data.",
+            },
+            {
+              q: "Can I add my own questions?",
+              a: "Absolutely. You can add custom questions to any category alongside the preloaded ones.",
+            },
+            {
+              q: "How does AI feedback work?",
+              a: "The AI draft feature uses Claude to help you structure and refine your answers based on your question and context.",
+            },
+            {
+              q: "Is there a free plan?",
+              a: "Yes — try the demo without signing up. A free tier is available with core prep features.",
+            },
+          ].map(({ q, a }, i) => (
+            <FaqItem key={i} question={q} answer={a} />
+          ))}
         </div>
       </div>
 

@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import HelloPage from "./pages/HelloPage";
 import OnboardingPage from "./pages/OnboardingPage";
 import HomePage from "./pages/HomePage";
+import ResourcesPage from "./pages/ResourcesPage";
 import { getToken, getMe, removeToken, register, saveToken } from "./services/auth";
 import { saveOnboarding } from "./services/onboarding";
 import { getUserData, saveUserData } from "./services/user_data";
@@ -101,7 +102,22 @@ function App() {
   }
 
   if (screen === "hello") {
-    return <HelloPage onAuthSuccess={handleAuthSuccess} onTryDemo={handleTryDemo} />;
+    return (
+      <HelloPage
+        onAuthSuccess={handleAuthSuccess}
+        onTryDemo={handleTryDemo}
+        onOpenResources={() => setScreen("resources")}
+      />
+    );
+  }
+
+  if (screen === "resources") {
+    return (
+      <ResourcesPage
+        onBack={() => setScreen("hello")}
+        onSignUp={() => setScreen("hello")}
+      />
+    );
   }
 
   if (screen === "onboarding") {
@@ -128,6 +144,7 @@ function App() {
       user={user}
       onLogout={handleLogout}
       onUpdatePositionsData={handleUpdatePositionsData}
+      onOpenResources={() => setScreen("resources")}
     />
   );
 }
