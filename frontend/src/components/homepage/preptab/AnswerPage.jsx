@@ -11,6 +11,9 @@ import { sendChatMessage } from "../../../services/chat";
 // - onNavigate: switch to a different question by id
 const AnswerPage = ({ question, questions, roles, positions, onUpdateAnswers, onAddAnswer, onUpdateAnswer, onDeleteAnswer, onBack, onNavigate }) => {
 
+  // --- Reference answer (from preloaded pool) ---
+  const [showReference, setShowReference] = useState(false);
+
   // --- Answer card expand/collapse ---
   // Tracks which answer card is expanded (by answer id), null = all collapsed
   const [expandedId, setExpandedId] = useState(
@@ -334,6 +337,33 @@ const AnswerPage = ({ question, questions, roles, positions, onUpdateAnswers, on
             <p className="text-gray-300 text-sm text-center mt-4">
               No answers yet — add one manually or use AI Draft on the right
             </p>
+          )}
+
+          {/* Reference Answer — shown only when preloaded ideal_answer exists */}
+          {question.ideal_answer && (
+            <div className="mt-4 border border-dashed border-gray-200 rounded-xl overflow-hidden">
+              <button
+                onClick={() => setShowReference((v) => !v)}
+                className="w-full flex items-center justify-between px-4 py-3 text-sm text-gray-400
+                  hover:bg-gray-50 cursor-pointer transition-colors"
+              >
+                <span className="flex items-center gap-2">
+                  <span>{showReference ? "▾" : "▸"}</span>
+                  <span className="font-medium">Reference Answer</span>
+                  <span className="text-xs bg-gray-100 text-gray-400 px-1.5 py-0.5 rounded-full">
+                    suggested
+                  </span>
+                </span>
+                <span className="text-xs text-gray-300">tap to {showReference ? "hide" : "show"}</span>
+              </button>
+              {showReference && (
+                <div className="px-4 pb-4 bg-gray-50">
+                  <p className="text-sm text-gray-500 whitespace-pre-wrap leading-relaxed">
+                    {question.ideal_answer}
+                  </p>
+                </div>
+              )}
+            </div>
           )}
         </div>
 

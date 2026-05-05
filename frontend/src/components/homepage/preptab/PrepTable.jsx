@@ -209,18 +209,48 @@ const AnswerModal = ({ question, onClose, onAddAnswer, onDeleteAnswer, onOpenAns
 // ============================================================
 // PrepTable
 // ============================================================
+const DIFFICULTY_STYLES = {
+  Easy:   "bg-green-50 text-green-600",
+  Medium: "bg-yellow-50 text-yellow-600",
+  Hard:   "bg-red-50 text-red-500",
+};
+
 const PrepTable = ({ questions, onUpdateQuestions, onAddQuestion, onDeleteQuestion, onAddAnswer, onDeleteAnswer, onOpenAnswerPage, onOpenPracticePage }) => {
   const [newQuestionText, setNewQuestionText] = useState("");
   const [openAnswerModalId, setOpenAnswerModalId] = useState(null);
-  const modalQuestion = questions.find((q) => q.id === openAnswerModalId);
+  const [experienceFilter, setExperienceFilter] = useState("All");
+
+  const experienceOptions = useMemo(() => {
+    const vals = [...new Set(questions.map((q) => q.experience).filter(Boolean))];
+    return vals.length ? ["All", ...vals] : [];
+  }, [questions]);
+
+  const filteredQuestions = useMemo(() =>
+    experienceFilter === "All"
+      ? questions
+      : questions.filter((q) => q.experience === experienceFilter),
+    [questions, experienceFilter]
+  );
+
+  const modalQuestion = filteredQuestions.find((q) => q.id === openAnswerModalId);
 
   const columns = useMemo(
     () => [
       columnHelper.accessor("question", {
         header: "Question",
-        cell: (info) => (
-          <span className="text-sm text-gray-700">{info.getValue()}</span>
-        ),
+        cell: (info) => {
+          const difficulty = info.row.original.difficulty;
+          return (
+            <div className="flex items-start gap-2">
+              <span className="text-sm text-gray-700">{info.getValue()}</span>
+              {difficulty && (
+                <span className={`flex-shrink-0 text-xs px-1.5 py-0.5 rounded-full ${DIFFICULTY_STYLES[difficulty] || "bg-gray-100 text-gray-400"}`}>
+                  {difficulty}
+                </span>
+              )}
+            </div>
+          );
+        },
       }),
       columnHelper.accessor("answers", {
         header: "Answers",
@@ -272,7 +302,7 @@ const PrepTable = ({ questions, onUpdateQuestions, onAddQuestion, onDeleteQuesti
   );
 
   const table = useReactTable({
-    data: questions,
+    data: filteredQuestions,
     columns,
     getCoreRowModel: getCoreRowModel(),
     getRowId: (row) => String(row.id),
@@ -287,9 +317,9 @@ const PrepTable = ({ questions, onUpdateQuestions, onAddQuestion, onDeleteQuesti
   const handleDragEnd = (event) => {
     const { active, over } = event;
     if (!over || active.id === over.id) return;
-    const oldIndex = questions.findIndex((q) => String(q.id) === String(active.id));
-    const newIndex = questions.findIndex((q) => String(q.id) === String(over.id));
-    onUpdateQuestions(arrayMove(questions, oldIndex, newIndex));
+    const oldIndex = filteredQuestions.findIndex((q) => String(q.id) === String(active.id));
+    const newIndex = filteredQuestions.findIndex((q) => String(q.id) === String(over.id));
+    onUpdateQuestions(arrayMove(filteredQuestions, oldIndex, newIndex));
   };
 
   const handleAdd = () => {
@@ -317,11 +347,30 @@ const PrepTable = ({ questions, onUpdateQuestions, onAddQuestion, onDeleteQuesti
     }
   };
 
-  const rowIds = questions.map((q) => String(q.id));
+  const rowIds = filteredQuestions.map((q) => String(q.id));
 
   return (
     <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
       <SortableContext items={rowIds} strategy={verticalListSortingStrategy}>
+        {/* Experience filter pills — only shown when questions have experience data */}
+        {experienceOptions.length > 0 && (
+          <div className="flex gap-2 flex-wrap mb-3">
+            {experienceOptions.map((opt) => (
+              <button
+                key={opt}
+                onClick={() => setExperienceFilter(opt)}
+                className={`px-3 py-1 rounded-full text-xs cursor-pointer transition-all ${
+                  experienceFilter === opt
+                    ? "bg-orange-400 text-white"
+                    : "bg-gray-100 text-gray-500 hover:bg-gray-200"
+                }`}
+              >
+                {opt}
+              </button>
+            ))}
+          </div>
+        )}
+
         <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
           <table className="w-full">
             <thead>
@@ -372,9 +421,11 @@ const PrepTable = ({ questions, onUpdateQuestions, onAddQuestion, onDeleteQuesti
             </tbody>
           </table>
 
-          {questions.length === 0 && (
+          {filteredQuestions.length === 0 && (
             <div className="py-12 text-center text-gray-300 text-sm">
-              No questions yet. Add one above!
+              {questions.length === 0
+                ? "No questions yet. Add one above!"
+                : `No questions for "${experienceFilter}" experience.`}
             </div>
           )}
         </div>

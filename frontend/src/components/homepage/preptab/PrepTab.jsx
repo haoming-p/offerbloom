@@ -77,6 +77,9 @@ const PrepTab = ({ data, defaultRoleId }) => {
         const mapped = data.map((q) => ({
           id: q.id,
           question: q.text,
+          difficulty: q.difficulty || "",
+          experience: q.experience || "",
+          ideal_answer: q.ideal_answer || "",
           answers: (q.answers || []).map((a) => ({ id: a.id, label: a.label, content: a.content })),
           practices: [],
         }));
