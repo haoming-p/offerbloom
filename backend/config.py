@@ -13,7 +13,7 @@ class Settings(BaseSettings):
     frontend_url: str = "http://localhost:5173"
 
     # Cloudflare R2
-    cloudflare_account_id: str = ""
+    r2_account_id: str = ""
     r2_endpoint: str = ""
     r2_access_key_id: str = ""
     r2_secret_access_key: str = ""
