@@ -37,8 +37,8 @@ const SaveToAccountModal = ({ onClose, onSuccess }) => {
         <h2 className="text-2xl font-bold text-gray-800 mb-1">
           Save your demo work
         </h2>
-        <p className="text-gray-400 text-sm mb-6">
-          Create a new account to keep everything you've added during the demo.
+        <p className="text-gray-500 text-sm mb-6">
+          Create an account to keep your demo session — your demo will be migrated, then deleted.
         </p>
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">

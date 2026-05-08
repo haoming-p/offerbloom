@@ -7,6 +7,7 @@ import FilesTab from "../components/homepage/filetab/FilesTab";
 import PrepTab from "../components/homepage/preptab/PrepTab";
 import MeTab from "../components/homepage/MeTab";
 import SaveToAccountModal from "../components/homepage/SaveToAccountModal";
+import ResetDemoModal from "../components/homepage/ResetDemoModal";
 import { resetDemo } from "../services/demo";
 import { saveToken } from "../services/auth";
 
@@ -18,18 +19,25 @@ const HomePage = ({ data, user, onLogout, onUpdatePositionsData, onOpenResources
   // Toggle between real dashboard and raw JSON data view
   const [showDebug, setShowDebug] = useState(false);
 
+  // Sidebar collapse state — default expanded
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+
   // Modal: "Save your demo work to a new account"
   const [showSaveModal, setShowSaveModal] = useState(false);
 
+  // Modal: "Reset demo?" confirmation
+  const [showResetModal, setShowResetModal] = useState(false);
+  const [resetLoading, setResetLoading] = useState(false);
+
   async function handleResetDemo() {
-    if (!window.confirm("Reset all your demo changes? This will reload the default demo data.")) return;
+    setResetLoading(true);
     try {
       const result = await resetDemo();
-      // Reset returns a brand new guest's TokenResponse — replace token then reload
       saveToken(result.access_token);
       window.location.reload();
     } catch (err) {
       alert(`Reset failed: ${err.message}`);
+      setResetLoading(false);
     }
   }
 
@@ -52,7 +60,7 @@ const HomePage = ({ data, user, onLogout, onUpdatePositionsData, onOpenResources
     // Normal tab rendering
     switch (activeTab) {
       case "dashboard":
-        return <DashboardTab data={data} onNavigateToPrep={(roleId) => { setPrepDefaultRole(roleId); setActiveTab("prep"); }} />;
+        return <DashboardTab data={data} user={user} onNavigateToPrep={(roleId) => { setPrepDefaultRole(roleId); setActiveTab("prep"); }} />;
       case "positions":
         return <PositionsTab data={data} onUpdatePositionsData={onUpdatePositionsData} />;
       case "files":
@@ -82,13 +90,19 @@ const HomePage = ({ data, user, onLogout, onUpdatePositionsData, onOpenResources
           if (target === "resources") onOpenResources?.();
         }}
         isDemoGuest={user?.is_demo_guest}
-        onResetDemo={handleResetDemo}
+        onResetDemo={() => setShowResetModal(true)}
         onSaveToAccount={() => setShowSaveModal(true)}
       />
 
       {/* Body: Sidebar + Content */}
       <div className="flex flex-1 overflow-hidden">
-        <SideBar activeTab={activeTab} onTabChange={setActiveTab} />
+        <SideBar
+          activeTab={activeTab}
+          onTabChange={setActiveTab}
+          isDemoGuest={user?.is_demo_guest}
+          collapsed={sidebarCollapsed}
+          onToggleCollapse={() => setSidebarCollapsed((c) => !c)}
+        />
 
         {/* Main content area — scrollable independently */}
         <div className="flex-1 overflow-y-auto">
@@ -101,6 +115,15 @@ const HomePage = ({ data, user, onLogout, onUpdatePositionsData, onOpenResources
         <SaveToAccountModal
           onClose={() => setShowSaveModal(false)}
           onSuccess={() => window.location.reload()}
+        />
+      )}
+
+      {/* Reset confirmation modal — only reachable from demo guest */}
+      {showResetModal && (
+        <ResetDemoModal
+          loading={resetLoading}
+          onCancel={() => setShowResetModal(false)}
+          onConfirm={handleResetDemo}
         />
       )}
     </div>

@@ -4,6 +4,8 @@ import React from "react";
 // - roles: array of role objects to show as badges
 // - showDebug: boolean, whether debug mode is on
 // - onToggleDebug: function to toggle debug mode
+import { LuUserPlus, LuRotateCcw } from "react-icons/lu";
+
 const TopBar = ({ showDebug, onToggleDebug, onLogoClick, onNavClick, isDemoGuest, onResetDemo, onSaveToAccount }) => {
   return (
     <div className="flex items-center justify-between px-6 py-3 bg-white border-b border-gray-200">
@@ -31,17 +33,19 @@ const TopBar = ({ showDebug, onToggleDebug, onLogoClick, onNavClick, isDemoGuest
           <>
             <button
               onClick={onSaveToAccount}
-              className="px-3 py-1 text-xs rounded-lg cursor-pointer bg-orange-400 text-white hover:bg-orange-500"
+              className="flex items-center gap-1.5 px-3 py-1 text-xs rounded-lg cursor-pointer bg-orange-400 text-white hover:bg-orange-500"
               title="Create a new account to keep your demo work"
             >
-              💾 Save to account
+              <LuUserPlus size={14} />
+              Save to account
             </button>
             <button
               onClick={onResetDemo}
-              className="px-3 py-1 text-xs rounded-lg cursor-pointer border border-orange-200 bg-orange-50 text-orange-600 hover:bg-orange-100"
-              title="Delete your changes and start over with default demo data"
+              className="flex items-center gap-1.5 px-3 py-1 text-xs rounded-lg cursor-pointer border border-orange-200 bg-orange-50 text-orange-600 hover:bg-orange-100"
+              title="Delete your demo session and start fresh"
             >
-              ↺ Reset demo
+              <LuRotateCcw size={14} />
+              Reset demo
             </button>
           </>
         )}
