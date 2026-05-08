@@ -66,7 +66,7 @@ const HomePage = ({ data, user, onLogout, onUpdatePositionsData, onOpenResources
       case "files":
         return <FilesTab data={data} />;
       case "prep":
-        return <PrepTab data={data} defaultRoleId={prepDefaultRole} />;
+        return <PrepTab data={data} user={user} defaultRoleId={prepDefaultRole} />;
       case "me":
         return <MeTab user={user} onLogout={onLogout} />;
       default:
