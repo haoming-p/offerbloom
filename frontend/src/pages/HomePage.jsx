@@ -6,6 +6,9 @@ import PositionsTab from "../components/homepage/PositionsTab";
 import FilesTab from "../components/homepage/filetab/FilesTab";
 import PrepTab from "../components/homepage/preptab/PrepTab";
 import MeTab from "../components/homepage/MeTab";
+import SaveToAccountModal from "../components/homepage/SaveToAccountModal";
+import { resetDemo } from "../services/demo";
+import { saveToken } from "../services/auth";
 
 const HomePage = ({ data, user, onLogout, onUpdatePositionsData, onOpenResources }) => {
   // Which sidebar tab is active
@@ -14,6 +17,21 @@ const HomePage = ({ data, user, onLogout, onUpdatePositionsData, onOpenResources
 
   // Toggle between real dashboard and raw JSON data view
   const [showDebug, setShowDebug] = useState(false);
+
+  // Modal: "Save your demo work to a new account"
+  const [showSaveModal, setShowSaveModal] = useState(false);
+
+  async function handleResetDemo() {
+    if (!window.confirm("Reset all your demo changes? This will reload the default demo data.")) return;
+    try {
+      const result = await resetDemo();
+      // Reset returns a brand new guest's TokenResponse — replace token then reload
+      saveToken(result.access_token);
+      window.location.reload();
+    } catch (err) {
+      alert(`Reset failed: ${err.message}`);
+    }
+  }
 
   // Render the active tab's content
   const renderTab = () => {
@@ -63,6 +81,9 @@ const HomePage = ({ data, user, onLogout, onUpdatePositionsData, onOpenResources
         onNavClick={(target) => {
           if (target === "resources") onOpenResources?.();
         }}
+        isDemoGuest={user?.is_demo_guest}
+        onResetDemo={handleResetDemo}
+        onSaveToAccount={() => setShowSaveModal(true)}
       />
 
       {/* Body: Sidebar + Content */}
@@ -74,6 +95,14 @@ const HomePage = ({ data, user, onLogout, onUpdatePositionsData, onOpenResources
           {renderTab()}
         </div>
       </div>
+
+      {/* Save-to-account modal — only reachable from demo guest */}
+      {showSaveModal && (
+        <SaveToAccountModal
+          onClose={() => setShowSaveModal(false)}
+          onSuccess={() => window.location.reload()}
+        />
+      )}
     </div>
   );
 };

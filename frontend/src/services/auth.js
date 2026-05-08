@@ -33,6 +33,13 @@ export async function getMe(token) {
   return data; // { id, name, email }
 }
 
+export async function demoLogin() {
+  const res = await fetch(`${API_URL}/auth/demo-login`, { method: "POST" });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.detail || "Demo unavailable");
+  return data; // { access_token, token_type, user }
+}
+
 // ── Token helpers ──────────────────────────────────────────────────────────
 
 export function saveToken(token) {
@@ -45,4 +52,18 @@ export function getToken() {
 
 export function removeToken() {
   localStorage.removeItem("access_token");
+}
+
+// ── Demo mode helpers ──────────────────────────────────────────────────────
+
+export function setDemoMode() {
+  localStorage.setItem("demo_mode", "true");
+}
+
+export function isDemoMode() {
+  return localStorage.getItem("demo_mode") === "true";
+}
+
+export function clearDemoMode() {
+  localStorage.removeItem("demo_mode");
 }

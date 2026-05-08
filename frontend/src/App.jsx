@@ -3,12 +3,8 @@ import HelloPage from "./pages/HelloPage";
 import OnboardingPage from "./pages/OnboardingPage";
 import HomePage from "./pages/HomePage";
 import ResourcesPage from "./pages/ResourcesPage";
-import { getToken, getMe, removeToken, register, saveToken } from "./services/auth";
-import { saveOnboarding } from "./services/onboarding";
+import { getToken, getMe, removeToken, saveToken, demoLogin } from "./services/auth";
 import { getUserData, saveUserData } from "./services/user_data";
-
-const DEMO_ROLE = { id: "pm", label: "Product Manager", emoji: "🎯", desc: "" };
-const DEMO_DATA = { roles: [DEMO_ROLE], positions: [], statuses: [], files: [] };
 
 function App() {
   const [screen, setScreen] = useState("loading");
@@ -54,7 +50,7 @@ function App() {
           setScreen("home");
         })
         .catch(() => {
-          setAppData(DEMO_DATA);
+          setAppData({ roles: [], positions: [], statuses: [], files: [] });
           setScreen("home");
         });
     }
@@ -63,13 +59,16 @@ function App() {
   async function handleTryDemo() {
     setScreen("loading");
     try {
-      const guestEmail = `guest_${Date.now()}@example.com`;
-      const guestPass = Math.random().toString(36).slice(2) + "Aa1!";
-      const result = await register("Demo User", guestEmail, guestPass);
+      const result = await demoLogin();
       saveToken(result.access_token);
-      await saveOnboarding({ roles: [DEMO_ROLE], positions: [] }).catch(() => {});
+      const data = await getUserData().catch(() => ({}));
       setUser(result.user);
-      setAppData(DEMO_DATA);
+      setAppData({
+        roles: data.roles || [],
+        positions: data.positions || [],
+        statuses: data.statuses || [],
+        files: [],
+      });
       setScreen("home");
     } catch {
       setScreen("hello");

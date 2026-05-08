@@ -16,6 +16,7 @@ class UserOut(BaseModel):
     id: str
     name: str
     email: str
+    is_demo_guest: bool = False
 
 
 class TokenResponse(BaseModel):

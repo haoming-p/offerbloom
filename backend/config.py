@@ -22,6 +22,9 @@ class Settings(BaseSettings):
 
     anthropic_api_key: str = ""
 
+    demo_user_email: str = ""
+    cleanup_secret: str = ""
+
     class Config:
         env_file = ".env"
 
