@@ -15,23 +15,30 @@ const SideBar = ({ activeTab, onTabChange, isDemoGuest, collapsed, onToggleColla
         collapsed ? "w-16" : "w-56"
       }`}
     >
-      {/* Collapse toggle */}
-      <div className={`flex ${collapsed ? "justify-center" : "justify-end"} px-3 mb-3`}>
-        <button
-          onClick={onToggleCollapse}
-          className="p-1.5 rounded-md text-gray-400 hover:text-gray-600 hover:bg-gray-100 cursor-pointer"
-          title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-        >
-          {collapsed ? <LuChevronsRight size={16} /> : <LuChevronsLeft size={16} />}
-        </button>
-      </div>
-
-      {/* Section header */}
-      {!collapsed && (
-        <div className="px-5 mb-2">
+      {/* Section header — Main Menu (left) + collapse toggle (right). When
+          collapsed, only the toggle is shown, centered. */}
+      {collapsed ? (
+        <div className="flex justify-center px-3 mb-3">
+          <button
+            onClick={onToggleCollapse}
+            className="p-1.5 rounded-md text-gray-400 hover:text-gray-600 hover:bg-gray-100 cursor-pointer"
+            title="Expand sidebar"
+          >
+            <LuChevronsRight size={16} />
+          </button>
+        </div>
+      ) : (
+        <div className="flex items-center justify-between pl-5 pr-3 mb-2">
           <span className="text-[11px] font-semibold tracking-wider text-gray-400 uppercase">
             Main Menu
           </span>
+          <button
+            onClick={onToggleCollapse}
+            className="p-1.5 rounded-md text-gray-400 hover:text-gray-600 hover:bg-gray-100 cursor-pointer"
+            title="Collapse sidebar"
+          >
+            <LuChevronsLeft size={16} />
+          </button>
         </div>
       )}
 

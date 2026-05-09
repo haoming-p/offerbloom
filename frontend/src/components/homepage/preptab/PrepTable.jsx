@@ -1,4 +1,5 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useRef } from "react";
+import { LuSearch } from "react-icons/lu";
 import {
   useReactTable,
   getCoreRowModel,
@@ -215,22 +216,42 @@ const DIFFICULTY_STYLES = {
   Hard:   "bg-red-50 text-red-500",
 };
 
-const PrepTable = ({ questions, onUpdateQuestions, onAddQuestion, onDeleteQuestion, onAddAnswer, onDeleteAnswer, onOpenAnswerPage, onOpenPracticePage }) => {
+const PrepTable = ({
+  questions,
+  onUpdateQuestions,
+  onAddQuestion,
+  onDeleteQuestion,
+  onAddAnswer,
+  onDeleteAnswer,
+  onOpenAnswerPage,
+  onOpenPracticePage,
+  showCategoryTag = false,
+  categoryLabelById = {},
+  showTagPicker = false,        // when true, add row reveals a tag dropdown after typing (All view)
+  availableCategories = [],     // [{ id, label }] for the tag dropdown
+}) => {
   const [newQuestionText, setNewQuestionText] = useState("");
+  const [newQuestionTag, setNewQuestionTag] = useState(""); // "" = no tag
   const [openAnswerModalId, setOpenAnswerModalId] = useState(null);
   const [experienceFilter, setExperienceFilter] = useState("All");
+  const [searchQuery, setSearchQuery] = useState("");
+  const newQuestionInputRef = useRef(null);
 
   const experienceOptions = useMemo(() => {
     const vals = [...new Set(questions.map((q) => q.experience).filter(Boolean))];
     return vals.length ? ["All", ...vals] : [];
   }, [questions]);
 
-  const filteredQuestions = useMemo(() =>
-    experienceFilter === "All"
+  const filteredQuestions = useMemo(() => {
+    let list = experienceFilter === "All"
       ? questions
-      : questions.filter((q) => q.experience === experienceFilter),
-    [questions, experienceFilter]
-  );
+      : questions.filter((q) => q.experience === experienceFilter);
+    const q = searchQuery.trim().toLowerCase();
+    if (q) {
+      list = list.filter((row) => (row.question || "").toLowerCase().includes(q));
+    }
+    return list;
+  }, [questions, experienceFilter, searchQuery]);
 
   const modalQuestion = filteredQuestions.find((q) => q.id === openAnswerModalId);
 
@@ -240,12 +261,19 @@ const PrepTable = ({ questions, onUpdateQuestions, onAddQuestion, onDeleteQuesti
         header: "Question",
         cell: (info) => {
           const difficulty = info.row.original.difficulty;
+          const catId = info.row.original.category_id;
+          const catLabel = catId ? categoryLabelById[catId] || catId : null;
           return (
-            <div className="flex items-start gap-2">
+            <div className="flex items-start gap-2 flex-wrap">
               <span className="text-sm text-gray-700">{info.getValue()}</span>
               {difficulty && (
                 <span className={`flex-shrink-0 text-xs px-1.5 py-0.5 rounded-full ${DIFFICULTY_STYLES[difficulty] || "bg-gray-100 text-gray-400"}`}>
                   {difficulty}
+                </span>
+              )}
+              {showCategoryTag && catLabel && (
+                <span className="flex-shrink-0 text-[11px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-500 border border-gray-200">
+                  {catLabel}
                 </span>
               )}
             </div>
@@ -325,9 +353,11 @@ const PrepTable = ({ questions, onUpdateQuestions, onAddQuestion, onDeleteQuesti
   const handleAdd = () => {
     if (!newQuestionText.trim()) return;
     const text = newQuestionText.trim();
+    const tag = showTagPicker ? newQuestionTag || null : undefined;
     setNewQuestionText("");
+    setNewQuestionTag("");
     if (onAddQuestion) {
-      onAddQuestion(text);
+      onAddQuestion(text, tag);
     } else {
       // fallback local-only
       const newQ = { id: `${Date.now()}-${Math.random()}`, question: text, answers: [], practices: [] };
@@ -352,7 +382,7 @@ const PrepTable = ({ questions, onUpdateQuestions, onAddQuestion, onDeleteQuesti
   return (
     <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
       <SortableContext items={rowIds} strategy={verticalListSortingStrategy}>
-        {/* Experience filter pills — only shown when questions have experience data */}
+        {/* Experience filter pills (only when there's experience data) */}
         {experienceOptions.length > 0 && (
           <div className="flex gap-2 flex-wrap mb-3">
             {experienceOptions.map((opt) => (
@@ -382,7 +412,28 @@ const PrepTable = ({ questions, onUpdateQuestions, onAddQuestion, onDeleteQuesti
                       key={header.id}
                       className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase"
                     >
-                      {flexRender(header.column.columnDef.header, header.getContext())}
+                      {header.column.id === "question" ? (
+                        <div className="flex items-center gap-3">
+                          <span>
+                            {flexRender(header.column.columnDef.header, header.getContext())}
+                          </span>
+                          <div className="relative">
+                            <LuSearch
+                              size={12}
+                              className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400"
+                            />
+                            <input
+                              type="text"
+                              value={searchQuery}
+                              onChange={(e) => setSearchQuery(e.target.value)}
+                              placeholder="Search…"
+                              className="pl-7 pr-2 py-1 w-44 text-xs border border-gray-200 rounded-md bg-white normal-case font-normal placeholder-gray-300 focus:outline-none focus:border-orange-300"
+                            />
+                          </div>
+                        </div>
+                      ) : (
+                        flexRender(header.column.columnDef.header, header.getContext())
+                      )}
                     </th>
                   ))
                 )}
@@ -390,18 +441,45 @@ const PrepTable = ({ questions, onUpdateQuestions, onAddQuestion, onDeleteQuesti
               </tr>
 
               <tr className="border-b border-gray-100">
-                <td className="px-2 py-2 text-center text-gray-300">+</td>
+                <td className="px-2 py-2 text-center text-gray-300 align-top pt-3">+</td>
                 <td className="px-4 py-2" colSpan={columns.length}>
                   <input
+                    ref={newQuestionInputRef}
                     type="text"
                     value={newQuestionText}
                     onChange={(e) => setNewQuestionText(e.target.value)}
                     onKeyDown={handleAddKeyDown}
-                    placeholder="Type a new question and press Enter..."
+                    placeholder="Type a new question and press Enter…"
                     className="w-full text-sm placeholder-gray-300 outline-none"
                   />
+                  {/* Tag picker — only in All view, only once user has typed */}
+                  {showTagPicker && newQuestionText.trim() && (
+                    <div className="flex items-center gap-1.5 text-xs mt-1.5 text-gray-400">
+                      <span>Tag:</span>
+                      <select
+                        value={newQuestionTag}
+                        onChange={(e) => {
+                          setNewQuestionTag(e.target.value);
+                          // Refocus the input so Enter submits
+                          newQuestionInputRef.current?.focus();
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            handleAdd();
+                          }
+                        }}
+                        className="text-xs border border-gray-200 rounded-md px-2 py-0.5 text-gray-600 bg-white cursor-pointer"
+                      >
+                        <option value="">No tag</option>
+                        {availableCategories.map((c) => (
+                          <option key={c.id} value={c.id}>{c.label}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
                 </td>
-                <td className="px-2 py-2">
+                <td className="px-2 py-2 align-top pt-3">
                   {newQuestionText.trim() && (
                     <button
                       onClick={handleAdd}

@@ -149,32 +149,17 @@ def _seed_defaults(db: Session, user_id: str, role_id: str, category_id: str, po
 @router.get("/", response_model=list[QuestionOut])
 def list_questions(
     role_id: str,
-    category_id: str,
+    category_id: str | None = None,
     position_key: str = "general",
     credentials: HTTPAuthorizationCredentials = Depends(bearer),
     db: Session = Depends(get_db),
 ):
+    """List questions for a role + position. If category_id is omitted, returns
+    questions across all categories (used by the 'All' tab). Default seeding
+    is skipped in 'all' mode since we don't know which category to seed."""
     user_id = _get_current_user_id(credentials)
 
-    result = db.run(
-        """
-        MATCH (u:User {id: $user_id})-[:HAS_QUESTION]->(q:Question {
-            role_id: $role_id,
-            category_id: $category_id,
-            position_key: $position_key
-        })
-        RETURN q ORDER BY q.order ASC
-        """,
-        user_id=user_id,
-        role_id=role_id,
-        category_id=category_id,
-        position_key=position_key,
-    )
-    records = result.data()
-
-    # Seed defaults on first access for this combo
-    if not records:
-        _seed_defaults(db, user_id, role_id, category_id, position_key)
+    if category_id:
         result = db.run(
             """
             MATCH (u:User {id: $user_id})-[:HAS_QUESTION]->(q:Question {
@@ -187,6 +172,40 @@ def list_questions(
             user_id=user_id,
             role_id=role_id,
             category_id=category_id,
+            position_key=position_key,
+        )
+        records = result.data()
+
+        # Seed defaults on first access for this combo
+        if not records:
+            _seed_defaults(db, user_id, role_id, category_id, position_key)
+            result = db.run(
+                """
+                MATCH (u:User {id: $user_id})-[:HAS_QUESTION]->(q:Question {
+                    role_id: $role_id,
+                    category_id: $category_id,
+                    position_key: $position_key
+                })
+                RETURN q ORDER BY q.order ASC
+                """,
+                user_id=user_id,
+                role_id=role_id,
+                category_id=category_id,
+                position_key=position_key,
+            )
+            records = result.data()
+    else:
+        # 'All' mode — every category for this role + position. No seeding.
+        result = db.run(
+            """
+            MATCH (u:User {id: $user_id})-[:HAS_QUESTION]->(q:Question {
+                role_id: $role_id,
+                position_key: $position_key
+            })
+            RETURN q ORDER BY q.category_id ASC, q.order ASC
+            """,
+            user_id=user_id,
+            role_id=role_id,
             position_key=position_key,
         )
         records = result.data()
@@ -236,6 +255,10 @@ def create_question(
 ):
     user_id = _get_current_user_id(credentials)
 
+    # category_id is optional. Untagged questions store as empty string so Cypher
+    # property comparisons stay simple (Neo4j prefers empty over null for this).
+    cat_id = data.category_id or ""
+
     # Place new question at the top (order = -1, then shift others)
     q_id = str(uuid.uuid4())
     db.run(
@@ -249,7 +272,7 @@ def create_question(
         """,
         user_id=user_id,
         role_id=data.role_id,
-        category_id=data.category_id,
+        category_id=cat_id,
         position_key=data.position_key,
     )
     db.run(
@@ -269,7 +292,7 @@ def create_question(
         id=q_id,
         text=data.text,
         role_id=data.role_id,
-        category_id=data.category_id,
+        category_id=cat_id,
         position_key=data.position_key,
     )
 
@@ -277,7 +300,7 @@ def create_question(
         id=q_id,
         text=data.text,
         role_id=data.role_id,
-        category_id=data.category_id,
+        category_id=cat_id,
         position_key=data.position_key,
         order=0,
     )
