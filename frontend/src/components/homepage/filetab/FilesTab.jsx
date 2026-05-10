@@ -165,8 +165,8 @@ const FilesTab = ({ data }) => {
           )}
         </div>
 
-        {/* Right side — AI Chat */}
-        <div className="w-96 flex-shrink-0">
+        {/* Right side — Bloom AI Chat */}
+        <div className="w-[520px] xl:w-[640px] flex-shrink-0 border-l border-gray-100">
           <FileAIChat
             selectedFile={activeView === "files" ? selectedFile : null}
             activeSection={activeView === "library" ? activeSection : null}

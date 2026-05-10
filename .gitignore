@@ -38,3 +38,5 @@ npm-debug.log*
 # === Testing ===
 coverage/
 .pytest_cache/
+# === Misc ===
+Capstone_project.pdf

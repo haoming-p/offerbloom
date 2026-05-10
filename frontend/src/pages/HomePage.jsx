@@ -11,7 +11,7 @@ import ResetDemoModal from "../components/homepage/ResetDemoModal";
 import { resetDemo } from "../services/demo";
 import { saveToken } from "../services/auth";
 
-const HomePage = ({ data, user, onLogout, onUpdatePositionsData, onOpenResources }) => {
+const HomePage = ({ data, user, onLogout, onUpdatePositionsData, onUpdateCategories, onOpenResources }) => {
   // Which sidebar tab is active
   const [activeTab, setActiveTab] = useState("dashboard");
   const [prepDefaultRole, setPrepDefaultRole] = useState(null);
@@ -66,7 +66,14 @@ const HomePage = ({ data, user, onLogout, onUpdatePositionsData, onOpenResources
       case "files":
         return <FilesTab data={data} />;
       case "prep":
-        return <PrepTab data={data} user={user} defaultRoleId={prepDefaultRole} />;
+        return (
+          <PrepTab
+            data={data}
+            user={user}
+            defaultRoleId={prepDefaultRole}
+            onUpdateCategories={onUpdateCategories}
+          />
+        );
       case "me":
         return <MeTab user={user} onLogout={onLogout} />;
       default:
@@ -82,6 +89,7 @@ const HomePage = ({ data, user, onLogout, onUpdatePositionsData, onOpenResources
     <div className="h-screen flex flex-col">
       {/* Top Bar */}
       <TopBar
+        user={user}
         roles={data?.roles || []}
         showDebug={showDebug}
         onToggleDebug={() => setShowDebug(!showDebug)}

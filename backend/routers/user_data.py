@@ -16,12 +16,14 @@ class UserDataUpdate(BaseModel):
     roles: list[Any] = []
     positions: list[Any] = []
     statuses: list[Any] = []
+    categories: dict[str, Any] = {}  # keyed by role_id -> [{id, label}]
 
 
 class UserDataOut(BaseModel):
     roles: list[Any] = []
     positions: list[Any] = []
     statuses: list[Any] = []
+    categories: dict[str, Any] = {}
 
 
 def _get_current_user_id(credentials: HTTPAuthorizationCredentials) -> str:
@@ -47,7 +49,8 @@ def get_user_data(
     roles = json.loads(u.get("roles", "[]") or "[]")
     positions = json.loads(u.get("positions", "[]") or "[]")
     statuses = json.loads(u.get("statuses", "[]") or "[]")
-    return UserDataOut(roles=roles, positions=positions, statuses=statuses)
+    categories = json.loads(u.get("categories", "{}") or "{}")
+    return UserDataOut(roles=roles, positions=positions, statuses=statuses, categories=categories)
 
 
 @router.put("/", response_model=UserDataOut)
@@ -64,11 +67,17 @@ def update_user_data(
     db.run(
         """
         MATCH (u:User {id: $user_id})
-        SET u.roles = $roles, u.positions = $positions, u.statuses = $statuses
+        SET u.roles = $roles, u.positions = $positions, u.statuses = $statuses, u.categories = $categories
         """,
         user_id=user_id,
         roles=json.dumps(data.roles),
         positions=json.dumps(data.positions),
         statuses=json.dumps(data.statuses),
+        categories=json.dumps(data.categories),
     )
-    return UserDataOut(roles=data.roles, positions=data.positions, statuses=data.statuses)
+    return UserDataOut(
+        roles=data.roles,
+        positions=data.positions,
+        statuses=data.statuses,
+        categories=data.categories,
+    )
