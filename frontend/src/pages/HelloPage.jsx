@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { login, register, saveToken } from "../services/auth";
+import bloomLogo from "../assets/bloom.png";
 
 const pmQuestions = [
   "Tell me about a time you led a cross-functional team",
@@ -110,7 +111,10 @@ const HelloPage = ({ onAuthSuccess, onTryDemo, onOpenResources }) => {
     <div className="min-h-screen bg-gray-50">
       {/* Top Bar */}
       <div className="flex items-center justify-between px-16 py-4 bg-white border-b border-gray-200">
-        <span className="text-2xl font-bold text-orange-400">OfferBloom</span>
+        <div className="flex items-center gap-2.5">
+          <img src={bloomLogo} alt="" className="w-9 h-9 rounded-full ring-2 ring-orange-200" />
+          <span className="text-2xl font-bold text-orange-400">OfferBloom</span>
+        </div>
         <div className="flex items-center gap-24">
           <div className="flex gap-8 text-gray-500">
             <button
@@ -119,14 +123,12 @@ const HelloPage = ({ onAuthSuccess, onTryDemo, onOpenResources }) => {
             >
               Interview resources
             </button>
-            <span className="cursor-default text-gray-300" title="Coming soon">Blog</span>
             <button
               onClick={() => document.getElementById("faq-section")?.scrollIntoView({ behavior: "smooth" })}
               className="cursor-pointer hover:text-gray-800"
             >
               FAQ
             </button>
-            <span className="cursor-default text-gray-300" title="Coming soon">Button 4</span>
           </div>
           <div className="flex gap-3">
             <button

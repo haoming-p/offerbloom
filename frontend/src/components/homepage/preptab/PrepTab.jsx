@@ -3,28 +3,27 @@ import PrepHeader from "./PrepHeader";
 import PrepTable from "./PrepTable";
 import AnswerPage from "./AnswerPage";
 import PracticePage from "./PracticePage";
-import { fetchQuestions, addQuestion, deleteQuestion } from "../../../services/questions";
+import { fetchQuestions, addQuestion, deleteQuestion, reorderQuestions } from "../../../services/questions";
 import { addAnswer, updateAnswer, deleteAnswer } from "../../../services/answers";
 import { addPractice, deletePractice } from "../../../services/practices";
 
-const DEFAULT_CATEGORIES = {
-  pm: [
-    { id: "bq", label: "BQ" },
-    { id: "product_sense", label: "Product Sense" },
-    { id: "general", label: "General" },
-  ],
-  sde: [
-    { id: "bq", label: "BQ" },
-    { id: "algorithm", label: "Algorithm" },
-    { id: "system_design", label: "System Design" },
-    { id: "general", label: "General" },
-  ],
-};
+// Categories match the 8 behavioral buckets seeded in Neo4j (PreloadedQuestion).
+// Same set applies to every role so all 8 roles get real seeded questions.
+const SHARED_CATEGORIES = [
+  { id: "leadership",          label: "Leadership" },
+  { id: "team_collaboration",  label: "Team Collaboration" },
+  { id: "conflict_resolution", label: "Conflict Resolution" },
+  { id: "adaptability",        label: "Adaptability" },
+  { id: "culture_fit",         label: "Culture Fit" },
+  { id: "motivation",          label: "Motivation" },
+  { id: "work_style",          label: "Work Style" },
+  { id: "career_goals",        label: "Career Goals" },
+];
 
 const makeKey = (roleId, posKey, catId) => `${roleId}-${posKey}-${catId}`;
 
-const PrepTab = ({ data, defaultRoleId }) => {
-  const { roles = [], positions = [] } = data || {};
+const PrepTab = ({ data, defaultRoleId, onUpdateCategories }) => {
+  const { roles = [], positions = [], categories: savedCategories = {} } = data || {};
 
   // --- Active selections ---
   const [activeRoleId, setActiveRoleId] = useState(defaultRoleId || roles[0]?.id || "");
@@ -36,13 +35,39 @@ const PrepTab = ({ data, defaultRoleId }) => {
   const [currentView, setCurrentView] = useState("table");
 
   // --- Categories per role ---
+  // Load persisted categories from saved user data; fall back to the 8 shared seeded categories.
   const [categories, setCategories] = useState(() => {
     const initial = {};
     roles.forEach((role) => {
-      initial[role.id] = DEFAULT_CATEGORIES[role.id] || [];
+      const saved = savedCategories[role.id];
+      initial[role.id] = Array.isArray(saved) && saved.length ? saved : [...SHARED_CATEGORIES];
     });
     return initial;
   });
+
+  // Reconcile when roles or savedCategories arrive after mount (e.g., onboarding finishes).
+  useEffect(() => {
+    setCategories((prev) => {
+      const next = { ...prev };
+      roles.forEach((role) => {
+        if (!next[role.id] || next[role.id].length === 0) {
+          const saved = savedCategories[role.id];
+          next[role.id] = Array.isArray(saved) && saved.length ? saved : [...SHARED_CATEGORIES];
+        }
+      });
+      return next;
+    });
+  }, [roles, savedCategories]);
+
+  // Debounced persist: save categories to backend when they change locally.
+  const categoriesSyncTimer = React.useRef(null);
+  const persistCategories = (next) => {
+    if (!onUpdateCategories) return;
+    clearTimeout(categoriesSyncTimer.current);
+    categoriesSyncTimer.current = setTimeout(() => {
+      onUpdateCategories(next);
+    }, 500);
+  };
 
   // --- Questions stored by composite key ---
   const [questions, setQuestions] = useState({});
@@ -110,41 +135,58 @@ const PrepTab = ({ data, defaultRoleId }) => {
     setCurrentView("table");
   };
 
-  // --- Category management ---
+  // --- Category management (with backend persistence) ---
   const handleAddCategory = (name) => {
     const newCat = { id: `custom-${Date.now()}`, label: name };
-    setCategories((prev) => ({
-      ...prev,
-      [activeRoleId]: [...(prev[activeRoleId] || []), newCat],
-    }));
+    setCategories((prev) => {
+      const next = { ...prev, [activeRoleId]: [...(prev[activeRoleId] || []), newCat] };
+      persistCategories(next);
+      return next;
+    });
     setActiveCategoryId(newCat.id);
     setCurrentView("table");
   };
 
   const handleEditCategory = (catId, newLabel) => {
-    setCategories((prev) => ({
-      ...prev,
-      [activeRoleId]: prev[activeRoleId].map((c) =>
-        c.id === catId ? { ...c, label: newLabel } : c
-      ),
-    }));
+    setCategories((prev) => {
+      const next = {
+        ...prev,
+        [activeRoleId]: prev[activeRoleId].map((c) => (c.id === catId ? { ...c, label: newLabel } : c)),
+      };
+      persistCategories(next);
+      return next;
+    });
   };
 
   const handleDeleteCategory = (catId) => {
-    setCategories((prev) => ({
-      ...prev,
-      [activeRoleId]: prev[activeRoleId].filter((c) => c.id !== catId),
-    }));
+    setCategories((prev) => {
+      const next = {
+        ...prev,
+        [activeRoleId]: prev[activeRoleId].filter((c) => c.id !== catId),
+      };
+      persistCategories(next);
+      return next;
+    });
     if (effectiveCatId === catId) {
       setActiveCategoryId(null);
     }
     setCurrentView("table");
   };
 
-  // --- Question list updates (used for reorder and answer saves — local only) ---
+  // --- Question list updates (used for reorder and answer saves) ---
+  // Persist new order to backend when ids order changes.
   const handleUpdateQuestions = (newList) => {
     if (!currentKey) return;
+    const prevList = questions[currentKey] || [];
     setQuestions((prev) => ({ ...prev, [currentKey]: newList }));
+
+    const newIds = newList.map((q) => String(q.id));
+    const prevIds = prevList.map((q) => String(q.id));
+    const orderChanged =
+      newIds.length === prevIds.length && newIds.some((id, i) => id !== prevIds[i]);
+    if (orderChanged && activeRoleId && effectiveCatId) {
+      reorderQuestions(activeRoleId, effectiveCatId, activePositionKey, newIds).catch(() => {});
+    }
   };
 
   // --- Add question — persists to backend ---

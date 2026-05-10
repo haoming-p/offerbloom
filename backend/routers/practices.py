@@ -121,10 +121,17 @@ def generate_feedback(
     )
 
     raw = message.content[0].text.strip()
+    if raw.startswith("```"):
+        raw = raw.split("\n", 1)[1] if "\n" in raw else raw
+        if raw.endswith("```"):
+            raw = raw[:-3].strip()
+    start, end = raw.find("{"), raw.rfind("}")
+    if start != -1 and end != -1:
+        raw = raw[start : end + 1]
     try:
         feedback = json.loads(raw)
     except json.JSONDecodeError:
-        raise HTTPException(status_code=500, detail="AI returned invalid response")
+        raise HTTPException(status_code=500, detail=f"AI returned invalid response: {raw[:200]}")
 
     feedback_json = json.dumps(feedback)
     db.run(

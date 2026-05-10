@@ -31,3 +31,9 @@ def delete_file(key: str) -> None:
     """Delete a file from R2 by its key."""
     client = _get_client()
     client.delete_object(Bucket=settings.r2_bucket_name, Key=key)
+
+
+def download_file(key: str) -> bytes:
+    client = _get_client()
+    obj = client.get_object(Bucket=settings.r2_bucket_name, Key=key)
+    return obj["Body"].read()

@@ -7,7 +7,7 @@ import FilesTab from "../components/homepage/filetab/FilesTab";
 import PrepTab from "../components/homepage/preptab/PrepTab";
 import MeTab from "../components/homepage/MeTab";
 
-const HomePage = ({ data, user, onLogout, onUpdatePositionsData, onOpenResources }) => {
+const HomePage = ({ data, user, onLogout, onUpdatePositionsData, onUpdateCategories, onOpenResources }) => {
   // Which sidebar tab is active
   const [activeTab, setActiveTab] = useState("dashboard");
   const [prepDefaultRole, setPrepDefaultRole] = useState(null);
@@ -40,7 +40,13 @@ const HomePage = ({ data, user, onLogout, onUpdatePositionsData, onOpenResources
       case "files":
         return <FilesTab data={data} />;
       case "prep":
-        return <PrepTab data={data} defaultRoleId={prepDefaultRole} />;
+        return (
+          <PrepTab
+            data={data}
+            defaultRoleId={prepDefaultRole}
+            onUpdateCategories={onUpdateCategories}
+          />
+        );
       case "me":
         return <MeTab user={user} onLogout={onLogout} />;
       default:
@@ -56,6 +62,7 @@ const HomePage = ({ data, user, onLogout, onUpdatePositionsData, onOpenResources
     <div className="h-screen flex flex-col">
       {/* Top Bar */}
       <TopBar
+        user={user}
         roles={data?.roles || []}
         showDebug={showDebug}
         onToggleDebug={() => setShowDebug(!showDebug)}
@@ -67,7 +74,11 @@ const HomePage = ({ data, user, onLogout, onUpdatePositionsData, onOpenResources
 
       {/* Body: Sidebar + Content */}
       <div className="flex flex-1 overflow-hidden">
-        <SideBar activeTab={activeTab} onTabChange={setActiveTab} />
+        <SideBar
+          activeTab={activeTab}
+          onTabChange={setActiveTab}
+          isDemo={!!user?.email?.startsWith("guest_")}
+        />
 
         {/* Main content area — scrollable independently */}
         <div className="flex-1 overflow-y-auto">

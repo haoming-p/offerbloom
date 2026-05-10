@@ -39,3 +39,21 @@ export async function deleteQuestion(questionId) {
     throw new Error(data.detail || "Failed to delete question");
   }
 }
+
+export async function reorderQuestions(roleId, categoryId, positionKey, orderedIds) {
+  const token = getToken();
+  const res = await fetch(`${API_URL}/questions/reorder`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      role_id: roleId,
+      category_id: categoryId,
+      position_key: positionKey,
+      ordered_ids: orderedIds,
+    }),
+  });
+  if (!res.ok) {
+    const data = await res.json();
+    throw new Error(data.detail || "Failed to reorder questions");
+  }
+}

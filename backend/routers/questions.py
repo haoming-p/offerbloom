@@ -172,8 +172,9 @@ def list_questions(
     )
     records = result.data()
 
-    # Seed defaults on first access for this combo
-    if not records:
+    # Seed defaults ONLY under position_key='general' on first access.
+    # Per-position lists stay user-curated to avoid duplicate seeded questions.
+    if not records and position_key == "general":
         _seed_defaults(db, user_id, role_id, category_id, position_key)
         result = db.run(
             """
@@ -281,6 +282,39 @@ def create_question(
         position_key=data.position_key,
         order=0,
     )
+
+
+from pydantic import BaseModel
+
+
+class ReorderRequest(BaseModel):
+    role_id: str
+    category_id: str
+    position_key: str = "general"
+    ordered_ids: list[str]
+
+
+@router.post("/reorder", status_code=204)
+def reorder_questions(
+    body: ReorderRequest,
+    credentials: HTTPAuthorizationCredentials = Depends(bearer),
+    db: Session = Depends(get_db),
+):
+    user_id = _get_current_user_id(credentials)
+    for index, qid in enumerate(body.ordered_ids):
+        db.run(
+            """
+            MATCH (u:User {id: $user_id})-[:HAS_QUESTION]->(q:Question {id: $qid})
+            WHERE q.role_id = $role_id AND q.category_id = $category_id AND q.position_key = $position_key
+            SET q.order = $order
+            """,
+            user_id=user_id,
+            qid=qid,
+            role_id=body.role_id,
+            category_id=body.category_id,
+            position_key=body.position_key,
+            order=index,
+        )
 
 
 @router.delete("/{question_id}", status_code=204)

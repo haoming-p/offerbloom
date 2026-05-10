@@ -9,13 +9,9 @@ const TABS = [
   { id: "me", label: "Me", emoji: "👤" },
 ];
 
-// Props:
-// - activeTab: which tab is currently selected
-// - onTabChange: function to switch tabs
-const SideBar = ({ activeTab, onTabChange }) => {
+const SideBar = ({ activeTab, onTabChange, isDemo }) => {
   return (
     <div className="w-52 bg-white border-r border-gray-200 flex flex-col py-4">
-      {/* Tab buttons */}
       <div className="flex flex-col gap-1 px-3">
         {TABS.map((tab) => (
           <button
@@ -33,14 +29,13 @@ const SideBar = ({ activeTab, onTabChange }) => {
         ))}
       </div>
 
-      {/* Bottom spacer — pushes future items to bottom */}
-      {/* TODO: change for further development — add settings, logout, etc. */}
       <div className="flex-1" />
 
-      {/* Bottom: Demo indicator */}
-      <div className="px-6 py-3 border-t border-gray-100">
-        <span className="text-xs text-gray-300">Demo Mode</span>
-      </div>
+      {isDemo && (
+        <div className="px-6 py-3 border-t border-gray-100">
+          <span className="text-xs text-gray-300">Demo Mode</span>
+        </div>
+      )}
     </div>
   );
 };

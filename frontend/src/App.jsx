@@ -28,6 +28,7 @@ function App() {
           roles: data.roles || [],
           positions: data.positions || [],
           statuses: data.statuses || [],
+          categories: data.categories || {},
           files: [],
         });
         setScreen("home");
@@ -49,6 +50,7 @@ function App() {
             roles: data.roles || [],
             positions: data.positions || [],
             statuses: data.statuses || [],
+            categories: data.categories || {},
             files: [],
           });
           setScreen("home");
@@ -87,7 +89,27 @@ function App() {
     const updated = { ...appData, roles, positions, statuses };
     setAppData(updated);
     try {
-      await saveUserData({ roles, positions, statuses });
+      await saveUserData({
+        roles,
+        positions,
+        statuses,
+        categories: updated.categories || {},
+      });
+    } catch {
+      // Silently fail — local state already updated
+    }
+  }
+
+  async function handleUpdateCategories(categoriesByRole) {
+    const updated = { ...appData, categories: categoriesByRole };
+    setAppData(updated);
+    try {
+      await saveUserData({
+        roles: updated.roles || [],
+        positions: updated.positions || [],
+        statuses: updated.statuses || [],
+        categories: categoriesByRole,
+      });
     } catch {
       // Silently fail — local state already updated
     }
@@ -144,6 +166,7 @@ function App() {
       user={user}
       onLogout={handleLogout}
       onUpdatePositionsData={handleUpdatePositionsData}
+      onUpdateCategories={handleUpdateCategories}
       onOpenResources={() => setScreen("resources")}
     />
   );
