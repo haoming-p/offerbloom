@@ -23,3 +23,7 @@ class QuestionCreate(BaseModel):
     category_id: str | None = None
     position_key: str = "general"
     text: str
+
+
+class QuestionUpdate(BaseModel):
+    text: str

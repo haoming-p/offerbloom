@@ -4,7 +4,7 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from neo4j import Session
 
 from database import get_db
-from models.question import QuestionOut, QuestionCreate
+from models.question import QuestionOut, QuestionCreate, QuestionUpdate
 from auth.jwt import decode_token
 
 router = APIRouter(prefix="/questions", tags=["questions"])
@@ -303,6 +303,40 @@ def create_question(
         category_id=cat_id,
         position_key=data.position_key,
         order=0,
+    )
+
+
+@router.put("/{question_id}", response_model=QuestionOut)
+def update_question(
+    question_id: str,
+    data: QuestionUpdate,
+    credentials: HTTPAuthorizationCredentials = Depends(bearer),
+    db: Session = Depends(get_db),
+):
+    user_id = _get_current_user_id(credentials)
+    record = db.run(
+        """
+        MATCH (u:User {id: $user_id})-[:HAS_QUESTION]->(q:Question {id: $q_id})
+        SET q.text = $text
+        RETURN q
+        """,
+        user_id=user_id,
+        q_id=question_id,
+        text=data.text,
+    ).single()
+    if not record:
+        raise HTTPException(status_code=404, detail="Question not found")
+    q = record["q"]
+    return QuestionOut(
+        id=q["id"],
+        text=q["text"],
+        role_id=q["role_id"],
+        category_id=q.get("category_id", ""),
+        position_key=q["position_key"],
+        order=q["order"],
+        difficulty=q.get("difficulty", ""),
+        experience=q.get("experience", ""),
+        ideal_answer=q.get("ideal_answer", ""),
     )
 
 

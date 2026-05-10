@@ -2,9 +2,8 @@ import { useState, useEffect } from "react";
 import PrepNavigator from "./PrepNavigator";
 import PrepCategoryTabs, { ALL_CATEGORY_ID } from "./PrepCategoryTabs";
 import PrepTable from "./PrepTable";
-import AnswerPage from "./AnswerPage";
-import PracticePage from "./PracticePage";
-import { fetchQuestions, addQuestion, deleteQuestion } from "../../../services/questions";
+import QuestionDetailPage from "./QuestionDetailPage";
+import { fetchQuestions, addQuestion, deleteQuestion, updateQuestion } from "../../../services/questions";
 import { addAnswer, updateAnswer, deleteAnswer } from "../../../services/answers";
 import { addPractice, deletePractice } from "../../../services/practices";
 
@@ -34,8 +33,11 @@ const PrepTab = ({ data, user, defaultRoleId }) => {
   const [activeCategoryId, setActiveCategoryId] = useState(ALL_CATEGORY_ID);
 
 
-  // --- View routing: "table" | { page: "answer", questionId } | { page: "practice", questionId }
+  // --- View routing: "table" | { page: "detail", questionId }
   const [currentView, setCurrentView] = useState("table");
+
+  // --- Roles & Positions sidebar collapse ---
+  const [navCollapsed, setNavCollapsed] = useState(false);
 
   // --- Categories per role ---
   const [categories, setCategories] = useState(() => {
@@ -285,8 +287,30 @@ const PrepTab = ({ data, user, defaultRoleId }) => {
     _updateQuestion(activeQuestionId, { practices: newPractices });
   };
 
-  const handleOpenAnswerPage = (questionId) => setCurrentView({ page: "answer", questionId });
-  const handleOpenPracticePage = (questionId) => setCurrentView({ page: "practice", questionId });
+  const handleOpenDetail = (questionId) => setCurrentView({ page: "detail", questionId });
+
+  // Inline question text update — backend persisted by QuestionDetailPage; we just patch local cache.
+  const handleUpdateQuestionText = (questionId, newText) => {
+    setQuestions((prev) => {
+      const next = { ...prev };
+      Object.keys(next).forEach((key) => {
+        next[key] = (next[key] || []).map((q) =>
+          q.id === questionId ? { ...q, question: newText } : q
+        );
+      });
+      return next;
+    });
+  };
+
+  // Used by inline question edit in PrepTable (no extra UI in QuestionDetailPage to handle errors)
+  const handleSaveQuestionEdit = async (questionId, newText) => {
+    try {
+      await updateQuestion(questionId, newText);
+      handleUpdateQuestionText(questionId, newText);
+    } catch (err) {
+      alert(err.message || "Failed to update question");
+    }
+  };
 
   // ============================================================
   // Layout
@@ -317,6 +341,8 @@ const PrepTab = ({ data, user, defaultRoleId }) => {
           activeRoleId={activeRoleId}
           activePositionKey={activePositionKey}
           onSelect={handleNavSelect}
+          collapsed={navCollapsed}
+          onToggleCollapse={() => setNavCollapsed((v) => !v)}
         />
 
         <div className="flex-1 flex flex-col min-w-0">
@@ -363,39 +389,29 @@ const PrepTab = ({ data, user, defaultRoleId }) => {
                   onUpdateQuestions={handleUpdateQuestions}
                   onAddQuestion={handleAddQuestion}
                   onDeleteQuestion={handleDeleteQuestion}
-                  onAddAnswer={(questionId, label, content) => handleAddAnswer(questionId, label, content)}
-                  onDeleteAnswer={(questionId, answerId) => handleDeleteAnswer(questionId, answerId)}
-                  onOpenAnswerPage={handleOpenAnswerPage}
-                  onOpenPracticePage={handleOpenPracticePage}
+                  onUpdateQuestionText={handleSaveQuestionEdit}
+                  onOpenDetail={handleOpenDetail}
                 />
               </div>
             </>
-          ) : currentView?.page === "answer" && activeQuestion ? (
-            <AnswerPage
+          ) : currentView?.page === "detail" && activeQuestion ? (
+            <QuestionDetailPage
               question={activeQuestion}
               questions={currentQuestions}
-              roles={roles}
-              positions={positions}
               onUpdateAnswers={handleUpdateAnswers}
               onAddAnswer={(label, content) => handleAddAnswer(activeQuestion.id, label, content)}
               onUpdateAnswer={(answerId, label, content) =>
                 handleUpdateAnswer(activeQuestion.id, answerId, label, content)
               }
               onDeleteAnswer={(answerId) => handleDeleteAnswer(activeQuestion.id, answerId)}
-              onBack={() => setCurrentView("table")}
-              onNavigate={(id) => setCurrentView({ page: "answer", questionId: id })}
-            />
-          ) : currentView?.page === "practice" && activeQuestion ? (
-            <PracticePage
-              question={activeQuestion}
-              questions={currentQuestions}
               onUpdatePractices={handleUpdatePractices}
               onAddPractice={(tag, duration, transcript) =>
                 handleAddPractice(activeQuestion.id, tag, duration, transcript)
               }
               onDeletePractice={(practiceId) => handleDeletePractice(activeQuestion.id, practiceId)}
+              onUpdateQuestionText={handleUpdateQuestionText}
               onBack={() => setCurrentView("table")}
-              onNavigate={(id) => setCurrentView({ page: "practice", questionId: id })}
+              onNavigate={(id) => setCurrentView({ page: "detail", questionId: id })}
             />
           ) : (
             <div className="flex flex-col items-center justify-center h-48 text-gray-300">
