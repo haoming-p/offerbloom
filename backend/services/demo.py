@@ -5,6 +5,7 @@ import uuid
 from neo4j import Session
 
 from auth.password import hash_password
+from services.graph_sync import sync_user_from_json
 
 
 def clone_user_data(db: Session, src_id: str, tgt_id: str) -> None:
@@ -101,6 +102,11 @@ def clone_user_data(db: Session, src_id: str, tgt_id: str) -> None:
                 q_id=new_q_id,
                 props=p_props,
             )
+
+    # 4. Mirror roles/positions JSON to graph nodes so :LINKED_TO edges and
+    # RAG retrieval can use them. Without this, the target user has JSON but
+    # no :Role/:Position graph nodes — and file linking silently no-ops.
+    sync_user_from_json(db, tgt_id)
 
 
 def create_demo_guest(db: Session, admin_email: str) -> dict:

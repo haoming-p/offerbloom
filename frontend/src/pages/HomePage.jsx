@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import TopBar from "../components/homepage/TopBar";
 import SideBar from "../components/homepage/SideBar";
 import DashboardTab from "../components/homepage/DashboardTab";
@@ -12,8 +12,14 @@ import { resetDemo } from "../services/demo";
 import { saveToken } from "../services/auth";
 
 const HomePage = ({ data, user, onLogout, onUpdatePositionsData, onUpdateCategories, onOpenResources }) => {
-  // Which sidebar tab is active
-  const [activeTab, setActiveTab] = useState("dashboard");
+  // Which sidebar tab is active. Persisted to localStorage so a browser refresh
+  // doesn't kick the user back to Dashboard every time.
+  const [activeTab, setActiveTab] = useState(
+    () => localStorage.getItem("activeTab") || "dashboard"
+  );
+  useEffect(() => {
+    localStorage.setItem("activeTab", activeTab);
+  }, [activeTab]);
   const [prepDefaultRole, setPrepDefaultRole] = useState(null);
 
   // Toggle between real dashboard and raw JSON data view

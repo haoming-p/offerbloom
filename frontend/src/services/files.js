@@ -40,3 +40,18 @@ export async function deleteFile(fileId) {
     throw new Error(data.detail || "Delete failed");
   }
 }
+
+export async function updateFileLinks(fileId, { roleIds = [], positionIds = [] }) {
+  const token = getToken();
+  const res = await fetch(`${API_URL}/files/${fileId}/links`, {
+    method: "PUT",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ role_ids: roleIds, position_ids: positionIds }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.detail || "Update links failed");
+  return data; // [{ kind, id, label }]
+}
