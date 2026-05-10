@@ -3,10 +3,19 @@ import { LuClipboardList, LuPencil } from "react-icons/lu";
 import RichTextEditor from "../../RichTextEditor";
 import { defaultAnswerLabel } from "../../../utils/timestamps";
 
-const AnswersPanel = ({ question, onUpdateAnswers, onAddAnswer, onUpdateAnswer, onDeleteAnswer }) => {
-  const [expandedId, setExpandedId] = useState(
-    question.answers.length > 0 ? question.answers[0].id : null
-  );
+const AnswersPanel = ({
+  question,
+  selectedAnswerId,
+  onSelectAnswer,
+  onUpdateAnswers,
+  onAddAnswer,
+  onUpdateAnswer,
+  onDeleteAnswer,
+}) => {
+  // Selection is controlled by the parent — the expanded card *is* the
+  // selected one. This way AIAssistantPanel knows which answer to target.
+  const expandedId = selectedAnswerId;
+  const setExpandedId = onSelectAnswer || (() => {});
   const [editingId, setEditingId] = useState(null);
   const [editLabel, setEditLabel] = useState("");
   const [editContent, setEditContent] = useState("");
