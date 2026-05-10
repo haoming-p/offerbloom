@@ -1,30 +1,28 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import PrepNavigator from "./PrepNavigator";
 import PrepCategoryTabs, { ALL_CATEGORY_ID } from "./PrepCategoryTabs";
 import PrepTable from "./PrepTable";
 import QuestionDetailPage from "./QuestionDetailPage";
-import { fetchQuestions, addQuestion, deleteQuestion, updateQuestion } from "../../../services/questions";
+import { fetchQuestions, addQuestion, deleteQuestion, updateQuestion, reorderQuestions } from "../../../services/questions";
 import { addAnswer, updateAnswer, deleteAnswer } from "../../../services/answers";
 import { addPractice, deletePractice } from "../../../services/practices";
 
-const DEFAULT_CATEGORIES = {
-  pm: [
-    { id: "bq", label: "BQ" },
-    { id: "product_sense", label: "Product Sense" },
-    { id: "general", label: "General" },
-  ],
-  sde: [
-    { id: "bq", label: "BQ" },
-    { id: "algorithm", label: "Algorithm" },
-    { id: "system_design", label: "System Design" },
-    { id: "general", label: "General" },
-  ],
-};
+// Categories match the 8 behavioral buckets seeded in Neo4j (PreloadedQuestion).
+const SHARED_CATEGORIES = [
+  { id: "leadership",          label: "Leadership" },
+  { id: "team_collaboration",  label: "Team Collaboration" },
+  { id: "conflict_resolution", label: "Conflict Resolution" },
+  { id: "adaptability",        label: "Adaptability" },
+  { id: "culture_fit",         label: "Culture Fit" },
+  { id: "motivation",          label: "Motivation" },
+  { id: "work_style",          label: "Work Style" },
+  { id: "career_goals",        label: "Career Goals" },
+];
 
 const makeKey = (roleId, posKey, catId) => `${roleId}-${posKey}-${catId}`;
 
-const PrepTab = ({ data, user, defaultRoleId }) => {
-  const { roles = [], positions = [] } = data || {};
+const PrepTab = ({ data, user, defaultRoleId, onUpdateCategories }) => {
+  const { roles = [], positions = [], categories: savedCategories = {} } = data || {};
   const isDemoGuest = user?.is_demo_guest;
 
   // --- Active selections ---
@@ -32,21 +30,45 @@ const PrepTab = ({ data, user, defaultRoleId }) => {
   const [activePositionKey, setActivePositionKey] = useState("general");
   const [activeCategoryId, setActiveCategoryId] = useState(ALL_CATEGORY_ID);
 
-
   // --- View routing: "table" | { page: "detail", questionId }
   const [currentView, setCurrentView] = useState("table");
 
   // --- Roles & Positions sidebar collapse ---
   const [navCollapsed, setNavCollapsed] = useState(false);
 
-  // --- Categories per role ---
+  // --- Categories per role: load saved or fall back to shared seeded set.
   const [categories, setCategories] = useState(() => {
     const initial = {};
     roles.forEach((role) => {
-      initial[role.id] = DEFAULT_CATEGORIES[role.id] || [];
+      const saved = savedCategories[role.id];
+      initial[role.id] = Array.isArray(saved) && saved.length ? saved : [...SHARED_CATEGORIES];
     });
     return initial;
   });
+
+  // Reconcile when roles or savedCategories arrive after mount.
+  useEffect(() => {
+    setCategories((prev) => {
+      const next = { ...prev };
+      roles.forEach((role) => {
+        if (!next[role.id] || next[role.id].length === 0) {
+          const saved = savedCategories[role.id];
+          next[role.id] = Array.isArray(saved) && saved.length ? saved : [...SHARED_CATEGORIES];
+        }
+      });
+      return next;
+    });
+  }, [roles, savedCategories]);
+
+  // Debounced persist to backend.
+  const categoriesSyncTimer = useRef(null);
+  const persistCategories = (next) => {
+    if (!onUpdateCategories) return;
+    clearTimeout(categoriesSyncTimer.current);
+    categoriesSyncTimer.current = setTimeout(() => {
+      onUpdateCategories(next);
+    }, 500);
+  };
 
   // --- Questions cached by composite key ---
   const [questions, setQuestions] = useState({});
@@ -64,7 +86,6 @@ const PrepTab = ({ data, user, defaultRoleId }) => {
   const currentKey = makeKey(activeRoleId, activePositionKey, activeCategoryId);
   const currentQuestions = questions[currentKey] || [];
 
-  // For answer/practice pages
   const activeQuestionId = typeof currentView === "object" ? currentView.questionId : null;
   const activeQuestion = currentQuestions.find((q) => q.id === activeQuestionId);
 
@@ -96,7 +117,7 @@ const PrepTab = ({ data, user, defaultRoleId }) => {
   const handleNavSelect = (roleId, positionKey) => {
     setActiveRoleId(roleId);
     setActivePositionKey(positionKey);
-    setActiveCategoryId(ALL_CATEGORY_ID); // reset to All when switching context
+    setActiveCategoryId(ALL_CATEGORY_ID);
     setCurrentView("table");
   };
 
@@ -105,31 +126,40 @@ const PrepTab = ({ data, user, defaultRoleId }) => {
     setCurrentView("table");
   };
 
-  // --- Category management ---
+  // --- Category management (with backend persistence) ---
   const handleAddCategory = (name) => {
     const newCat = { id: `custom-${Date.now()}`, label: name };
-    setCategories((prev) => ({
-      ...prev,
-      [activeRoleId]: [...(prev[activeRoleId] || []), newCat],
-    }));
+    setCategories((prev) => {
+      const next = { ...prev, [activeRoleId]: [...(prev[activeRoleId] || []), newCat] };
+      persistCategories(next);
+      return next;
+    });
     setActiveCategoryId(newCat.id);
     setCurrentView("table");
   };
 
   const handleEditCategory = (catId, newLabel) => {
-    setCategories((prev) => ({
-      ...prev,
-      [activeRoleId]: prev[activeRoleId].map((c) =>
-        c.id === catId ? { ...c, label: newLabel } : c,
-      ),
-    }));
+    setCategories((prev) => {
+      const next = {
+        ...prev,
+        [activeRoleId]: prev[activeRoleId].map((c) =>
+          c.id === catId ? { ...c, label: newLabel } : c,
+        ),
+      };
+      persistCategories(next);
+      return next;
+    });
   };
 
   const handleDeleteCategory = (catId) => {
-    setCategories((prev) => ({
-      ...prev,
-      [activeRoleId]: prev[activeRoleId].filter((c) => c.id !== catId),
-    }));
+    setCategories((prev) => {
+      const next = {
+        ...prev,
+        [activeRoleId]: prev[activeRoleId].filter((c) => c.id !== catId),
+      };
+      persistCategories(next);
+      return next;
+    });
     if (activeCategoryId === catId) {
       setActiveCategoryId(ALL_CATEGORY_ID);
     }
@@ -140,17 +170,32 @@ const PrepTab = ({ data, user, defaultRoleId }) => {
   // Question CRUD
   // ============================================================
   const handleUpdateQuestions = (newList) => {
+    const prevList = questions[currentKey] || [];
     setQuestions((prev) => ({ ...prev, [currentKey]: newList }));
+
+    // Persist new order to backend when ids order changes.
+    // Skip when on the "All" tab — reorder is per-category in storage.
+    const newIds = newList.map((q) => String(q.id));
+    const prevIds = prevList.map((q) => String(q.id));
+    const orderChanged =
+      newIds.length === prevIds.length && newIds.some((id, i) => id !== prevIds[i]);
+    if (
+      orderChanged &&
+      activeRoleId &&
+      activeCategoryId &&
+      activeCategoryId !== ALL_CATEGORY_ID
+    ) {
+      reorderQuestions(activeRoleId, activeCategoryId, activePositionKey, newIds).catch(() => {});
+    }
   };
 
   // Add a question. tagOverride is used when adding from the "All" tab where the
   // user picks an optional tag from a dropdown (null = no tag).
   const handleAddQuestion = async (text, tagOverride) => {
     if (!activeRoleId) return;
-    // If we're on a real category tab, save under it. If on "All", use the dropdown choice.
     const categoryForSave =
       activeCategoryId === ALL_CATEGORY_ID
-        ? tagOverride || null // null = no tag
+        ? tagOverride || null
         : activeCategoryId;
     try {
       const created = await addQuestion(activeRoleId, categoryForSave, activePositionKey, text);
@@ -162,14 +207,10 @@ const PrepTab = ({ data, user, defaultRoleId }) => {
         practices: [],
       };
       setQuestions((prev) => {
-        // Add to the current cache key
         const next = {
           ...prev,
           [currentKey]: [newQ, ...(prev[currentKey] || [])],
         };
-        // Invalidate any other cached entries for the same role+position so they
-        // refetch fresh data on next visit (so the new question shows up under
-        // its specific category tab too).
         const prefix = `${activeRoleId}-${activePositionKey}-`;
         for (const k of Object.keys(next)) {
           if (k.startsWith(prefix) && k !== currentKey) {
@@ -196,7 +237,7 @@ const PrepTab = ({ data, user, defaultRoleId }) => {
     if (activeQuestionId === questionId) setCurrentView("table");
   };
 
-  // --- Answer / Practice handlers — unchanged from before ---
+  // --- Answer / Practice handlers ---
   const _updateQuestion = (questionId, patch) => {
     setQuestions((prev) => ({
       ...prev,
@@ -315,7 +356,6 @@ const PrepTab = ({ data, user, defaultRoleId }) => {
   // ============================================================
   // Layout
   // ============================================================
-  // For mapping category_id → label (used by the "All" view tag)
   const categoryLabelById = Object.fromEntries(roleCats.map((c) => [c.id, c.label]));
   const showCategoryTag = activeCategoryId === ALL_CATEGORY_ID;
 

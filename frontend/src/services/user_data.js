@@ -12,12 +12,12 @@ export async function getUserData() {
   return data; // { roles, positions, statuses }
 }
 
-export async function saveUserData({ roles, positions, statuses }) {
+export async function saveUserData({ roles, positions, statuses, categories }) {
   const token = getToken();
   const res = await fetch(`${API_URL}/user-data/`, {
     method: "PUT",
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ roles, positions, statuses }),
+    body: JSON.stringify({ roles, positions, statuses, categories: categories || {} }),
   });
   const data = await res.json();
   if (!res.ok) throw new Error(data.detail || "Failed to save user data");
