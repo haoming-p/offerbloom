@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from "react";
-import PrepHeader from "./PrepHeader";
+import { useState, useEffect, useRef } from "react";
+import PrepNavigator from "./PrepNavigator";
+import PrepCategoryTabs, { ALL_CATEGORY_ID } from "./PrepCategoryTabs";
 import PrepTable from "./PrepTable";
 import AnswerPage from "./AnswerPage";
 import PracticePage from "./PracticePage";
@@ -8,7 +9,6 @@ import { addAnswer, updateAnswer, deleteAnswer } from "../../../services/answers
 import { addPractice, deletePractice } from "../../../services/practices";
 
 // Categories match the 8 behavioral buckets seeded in Neo4j (PreloadedQuestion).
-// Same set applies to every role so all 8 roles get real seeded questions.
 const SHARED_CATEGORIES = [
   { id: "leadership",          label: "Leadership" },
   { id: "team_collaboration",  label: "Team Collaboration" },
@@ -22,20 +22,18 @@ const SHARED_CATEGORIES = [
 
 const makeKey = (roleId, posKey, catId) => `${roleId}-${posKey}-${catId}`;
 
-const PrepTab = ({ data, defaultRoleId, onUpdateCategories }) => {
+const PrepTab = ({ data, user, defaultRoleId, onUpdateCategories }) => {
   const { roles = [], positions = [], categories: savedCategories = {} } = data || {};
+  const isDemoGuest = user?.is_demo_guest;
 
   // --- Active selections ---
   const [activeRoleId, setActiveRoleId] = useState(defaultRoleId || roles[0]?.id || "");
   const [activePositionKey, setActivePositionKey] = useState("general");
-  const [activeCategoryId, setActiveCategoryId] = useState(null);
+  const [activeCategoryId, setActiveCategoryId] = useState(ALL_CATEGORY_ID);
 
-  // --- View routing ---
-  // "table" | { page: "answer", questionId } | { page: "practice", questionId }
   const [currentView, setCurrentView] = useState("table");
 
-  // --- Categories per role ---
-  // Load persisted categories from saved user data; fall back to the 8 shared seeded categories.
+  // --- Categories per role: load saved or fall back to shared seeded set.
   const [categories, setCategories] = useState(() => {
     const initial = {};
     roles.forEach((role) => {
@@ -45,7 +43,7 @@ const PrepTab = ({ data, defaultRoleId, onUpdateCategories }) => {
     return initial;
   });
 
-  // Reconcile when roles or savedCategories arrive after mount (e.g., onboarding finishes).
+  // Reconcile when roles or savedCategories arrive after mount.
   useEffect(() => {
     setCategories((prev) => {
       const next = { ...prev };
@@ -59,8 +57,8 @@ const PrepTab = ({ data, defaultRoleId, onUpdateCategories }) => {
     });
   }, [roles, savedCategories]);
 
-  // Debounced persist: save categories to backend when they change locally.
-  const categoriesSyncTimer = React.useRef(null);
+  // Debounced persist to backend.
+  const categoriesSyncTimer = useRef(null);
   const persistCategories = (next) => {
     if (!onUpdateCategories) return;
     clearTimeout(categoriesSyncTimer.current);
@@ -69,39 +67,36 @@ const PrepTab = ({ data, defaultRoleId, onUpdateCategories }) => {
     }, 500);
   };
 
-  // --- Questions stored by composite key ---
+  // --- Questions cached by composite key ---
   const [questions, setQuestions] = useState({});
 
   // ============================================================
-  // Derived values
+  // Derived
   // ============================================================
   const roleCats = categories[activeRoleId] || [];
+  const activeRole = roles.find((r) => r.id === activeRoleId);
+  const activePosition =
+    activePositionKey === "general"
+      ? null
+      : positions.find((p) => String(p.id) === activePositionKey);
 
-  const effectiveCatId =
-    activeCategoryId && roleCats.some((c) => c.id === activeCategoryId)
-      ? activeCategoryId
-      : roleCats[0]?.id || null;
+  const currentKey = makeKey(activeRoleId, activePositionKey, activeCategoryId);
+  const currentQuestions = questions[currentKey] || [];
 
-  const currentKey = effectiveCatId
-    ? makeKey(activeRoleId, activePositionKey, effectiveCatId)
-    : null;
-  const currentQuestions = currentKey ? questions[currentKey] || [] : [];
-
-  // For answer/practice pages — find the active question
-  const activeQuestionId =
-    typeof currentView === "object" ? currentView.questionId : null;
+  const activeQuestionId = typeof currentView === "object" ? currentView.questionId : null;
   const activeQuestion = currentQuestions.find((q) => q.id === activeQuestionId);
 
-  // Fetch questions from backend whenever the active role/category/position changes
+  // Fetch when the active selection changes
   useEffect(() => {
-    if (!activeRoleId || !effectiveCatId) return;
-    // Only fetch if not already loaded
-    if (questions[currentKey]) return;
-    fetchQuestions(activeRoleId, effectiveCatId, activePositionKey)
+    if (!activeRoleId) return;
+    if (questions[currentKey]) return; // already cached
+    const catParam = activeCategoryId === ALL_CATEGORY_ID ? null : activeCategoryId;
+    fetchQuestions(activeRoleId, catParam, activePositionKey)
       .then((data) => {
         const mapped = data.map((q) => ({
           id: q.id,
           question: q.text,
+          category_id: q.category_id,
           difficulty: q.difficulty || "",
           experience: q.experience || "",
           ideal_answer: q.ideal_answer || "",
@@ -114,19 +109,12 @@ const PrepTab = ({ data, defaultRoleId, onUpdateCategories }) => {
   }, [currentKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ============================================================
-  // Tab change handlers — reset view to table when switching
+  // Selection handlers
   // ============================================================
-
-  const handleRoleChange = (roleId) => {
+  const handleNavSelect = (roleId, positionKey) => {
     setActiveRoleId(roleId);
-    setActivePositionKey("general");
-    setActiveCategoryId(null);
-    setCurrentView("table");
-  };
-
-  const handlePositionChange = (posKey) => {
-    setActivePositionKey(posKey);
-    setActiveCategoryId(null);
+    setActivePositionKey(positionKey);
+    setActiveCategoryId(ALL_CATEGORY_ID);
     setCurrentView("table");
   };
 
@@ -151,7 +139,9 @@ const PrepTab = ({ data, defaultRoleId, onUpdateCategories }) => {
     setCategories((prev) => {
       const next = {
         ...prev,
-        [activeRoleId]: prev[activeRoleId].map((c) => (c.id === catId ? { ...c, label: newLabel } : c)),
+        [activeRoleId]: prev[activeRoleId].map((c) =>
+          c.id === catId ? { ...c, label: newLabel } : c,
+        ),
       };
       persistCategories(next);
       return next;
@@ -167,46 +157,71 @@ const PrepTab = ({ data, defaultRoleId, onUpdateCategories }) => {
       persistCategories(next);
       return next;
     });
-    if (effectiveCatId === catId) {
-      setActiveCategoryId(null);
+    if (activeCategoryId === catId) {
+      setActiveCategoryId(ALL_CATEGORY_ID);
     }
     setCurrentView("table");
   };
 
-  // --- Question list updates (used for reorder and answer saves) ---
-  // Persist new order to backend when ids order changes.
+  // ============================================================
+  // Question CRUD
+  // ============================================================
   const handleUpdateQuestions = (newList) => {
-    if (!currentKey) return;
     const prevList = questions[currentKey] || [];
     setQuestions((prev) => ({ ...prev, [currentKey]: newList }));
 
+    // Persist new order to backend when ids order changes.
+    // Skip when on the "All" tab — reorder is per-category in storage.
     const newIds = newList.map((q) => String(q.id));
     const prevIds = prevList.map((q) => String(q.id));
     const orderChanged =
       newIds.length === prevIds.length && newIds.some((id, i) => id !== prevIds[i]);
-    if (orderChanged && activeRoleId && effectiveCatId) {
-      reorderQuestions(activeRoleId, effectiveCatId, activePositionKey, newIds).catch(() => {});
+    if (
+      orderChanged &&
+      activeRoleId &&
+      activeCategoryId &&
+      activeCategoryId !== ALL_CATEGORY_ID
+    ) {
+      reorderQuestions(activeRoleId, activeCategoryId, activePositionKey, newIds).catch(() => {});
     }
   };
 
-  // --- Add question — persists to backend ---
-  const handleAddQuestion = async (text) => {
-    if (!currentKey || !activeRoleId || !effectiveCatId) return;
+  // Add a question. tagOverride is used when adding from the "All" tab where the
+  // user picks an optional tag from a dropdown (null = no tag).
+  const handleAddQuestion = async (text, tagOverride) => {
+    if (!activeRoleId) return;
+    const categoryForSave =
+      activeCategoryId === ALL_CATEGORY_ID
+        ? tagOverride || null
+        : activeCategoryId;
     try {
-      const created = await addQuestion(activeRoleId, effectiveCatId, activePositionKey, text);
-      const newQ = { id: created.id, question: created.text, answers: [], practices: [] };
-      setQuestions((prev) => ({
-        ...prev,
-        [currentKey]: [newQ, ...(prev[currentKey] || [])],
-      }));
+      const created = await addQuestion(activeRoleId, categoryForSave, activePositionKey, text);
+      const newQ = {
+        id: created.id,
+        question: created.text,
+        category_id: created.category_id,
+        answers: [],
+        practices: [],
+      };
+      setQuestions((prev) => {
+        const next = {
+          ...prev,
+          [currentKey]: [newQ, ...(prev[currentKey] || [])],
+        };
+        const prefix = `${activeRoleId}-${activePositionKey}-`;
+        for (const k of Object.keys(next)) {
+          if (k.startsWith(prefix) && k !== currentKey) {
+            delete next[k];
+          }
+        }
+        return next;
+      });
     } catch (err) {
       console.error("Failed to add question:", err);
     }
   };
 
-  // --- Delete question — persists to backend ---
   const handleDeleteQuestion = async (questionId) => {
-    if (!currentKey) return;
     try {
       await deleteQuestion(questionId);
     } catch (err) {
@@ -219,18 +234,16 @@ const PrepTab = ({ data, defaultRoleId, onUpdateCategories }) => {
     if (activeQuestionId === questionId) setCurrentView("table");
   };
 
-  // --- Helper to update a single question's field in state ---
+  // --- Answer / Practice handlers ---
   const _updateQuestion = (questionId, patch) => {
-    if (!currentKey) return;
     setQuestions((prev) => ({
       ...prev,
       [currentKey]: (prev[currentKey] || []).map((q) =>
-        q.id === questionId ? { ...q, ...patch } : q
+        q.id === questionId ? { ...q, ...patch } : q,
       ),
     }));
   };
 
-  // --- Answer handlers (backend + local state) ---
   const handleAddAnswer = async (questionId, label, content) => {
     try {
       const created = await addAnswer(questionId, label, content);
@@ -247,7 +260,7 @@ const PrepTab = ({ data, defaultRoleId, onUpdateCategories }) => {
       await updateAnswer(answerId, label, content);
       _updateQuestion(questionId, {
         answers: (currentQuestions.find((q) => q.id === questionId)?.answers || []).map((a) =>
-          a.id === answerId ? { ...a, label, content } : a
+          a.id === answerId ? { ...a, label, content } : a,
         ),
       });
     } catch (err) {
@@ -263,12 +276,11 @@ const PrepTab = ({ data, defaultRoleId, onUpdateCategories }) => {
     }
     _updateQuestion(questionId, {
       answers: (currentQuestions.find((q) => q.id === questionId)?.answers || []).filter(
-        (a) => a.id !== answerId
+        (a) => a.id !== answerId,
       ),
     });
   };
 
-  // --- Practice handlers (backend + local state) ---
   const handleAddPractice = async (questionId, tag, duration, transcript) => {
     try {
       const created = await addPractice(questionId, tag, duration, transcript);
@@ -298,110 +310,144 @@ const PrepTab = ({ data, defaultRoleId, onUpdateCategories }) => {
     }
     _updateQuestion(questionId, {
       practices: (currentQuestions.find((q) => q.id === questionId)?.practices || []).filter(
-        (p) => p.id !== practiceId
+        (p) => p.id !== practiceId,
       ),
     });
   };
 
-  // --- Legacy: local-only updates used by answer/practice pages for non-persisted changes ---
   const handleUpdateAnswers = (newAnswers) => {
-    if (!currentKey || !activeQuestionId) return;
+    if (!activeQuestionId) return;
     _updateQuestion(activeQuestionId, { answers: newAnswers });
   };
 
   const handleUpdatePractices = (newPractices) => {
-    if (!currentKey || !activeQuestionId) return;
+    if (!activeQuestionId) return;
     _updateQuestion(activeQuestionId, { practices: newPractices });
   };
 
-  // --- Navigation ---
-  const handleOpenAnswerPage = (questionId) => {
-    setCurrentView({ page: "answer", questionId });
-  };
+  const handleOpenAnswerPage = (questionId) => setCurrentView({ page: "answer", questionId });
+  const handleOpenPracticePage = (questionId) => setCurrentView({ page: "practice", questionId });
 
-  const handleOpenPracticePage = (questionId) => {
-    setCurrentView({ page: "practice", questionId });
-  };
+  // ============================================================
+  // Layout
+  // ============================================================
+  const categoryLabelById = Object.fromEntries(roleCats.map((c) => [c.id, c.label]));
+  const showCategoryTag = activeCategoryId === ALL_CATEGORY_ID;
 
   return (
     <div className="flex flex-col h-full">
-      {/* Shared tab header — always visible */}
-      <PrepHeader
-        roles={roles}
-        positions={positions}
-        activeRoleId={activeRoleId}
-        activePositionKey={activePositionKey}
-        categories={categories}
-        activeCategoryId={activeCategoryId}
-        effectiveCatId={effectiveCatId}
-        onRoleChange={handleRoleChange}
-        onPositionChange={handlePositionChange}
-        onCategoryChange={handleCategoryChange}
-        onAddCategory={handleAddCategory}
-        onEditCategory={handleEditCategory}
-        onDeleteCategory={handleDeleteCategory}
-      />
+      {/* Title bar */}
+      <div className="px-8 pt-8 pb-4">
+        <h1 className="text-2xl font-bold text-gray-800 mb-1">
+          {isDemoGuest ? "Practice with sample questions" : "Practice questions"}
+        </h1>
+        <p className="text-sm text-gray-400">
+          {isDemoGuest
+            ? "Pick a role and category — questions cloned from the demo source are ready to explore."
+            : "Pick a role on the left, then a category to start practicing."}
+        </p>
+      </div>
 
-      {/* Content area — switches between table, answer page, practice page */}
-      <div className="flex-1 min-h-0">
-        {currentView === "table" ? (
-          // Table view
-          <div className="h-full overflow-y-auto show-scrollbar px-6 py-4">
-            {effectiveCatId ? (
-              <PrepTable
-                questions={currentQuestions}
-                onUpdateQuestions={handleUpdateQuestions}
-                onAddQuestion={handleAddQuestion}
-                onDeleteQuestion={handleDeleteQuestion}
-                onAddAnswer={(questionId, label, content) => handleAddAnswer(questionId, label, content)}
-                onDeleteAnswer={(questionId, answerId) => handleDeleteAnswer(questionId, answerId)}
-                onOpenAnswerPage={handleOpenAnswerPage}
-                onOpenPracticePage={handleOpenPracticePage}
-              />
-            ) : (
-              <div className="flex flex-col items-center justify-center h-48 text-gray-300">
-                <span className="text-lg mb-2">No categories yet</span>
-                <span className="text-sm">Click "+" to add your first category</span>
+      {/* Body: navigator + content */}
+      <div className="flex flex-1 min-h-0 border-t border-gray-200">
+        <PrepNavigator
+          roles={roles}
+          positions={positions}
+          activeRoleId={activeRoleId}
+          activePositionKey={activePositionKey}
+          onSelect={handleNavSelect}
+        />
+
+        <div className="flex-1 flex flex-col min-w-0">
+          {currentView === "table" ? (
+            <>
+              {/* Context badge */}
+              <div className="px-6 pt-5 pb-3 flex items-center gap-2 text-sm">
+                <span className="text-gray-300">Showing:</span>
+                {activeRole?.emoji && <span>{activeRole.emoji}</span>}
+                <span className="font-medium text-gray-700 truncate">
+                  {activeRole?.label || activeRoleId}
+                </span>
+                <span className="text-gray-300">·</span>
+                <span className="text-gray-700 truncate">
+                  {activePosition ? activePosition.title : "General"}
+                </span>
+                {activePosition?.company && (
+                  <span className="text-gray-400 truncate">@ {activePosition.company}</span>
+                )}
               </div>
-            )}
-          </div>
-        ) : currentView?.page === "answer" && activeQuestion ? (
-          // Answer page
-          <AnswerPage
-            question={activeQuestion}
-            questions={currentQuestions}
-            roles={roles}
-            positions={positions}
-            onUpdateAnswers={handleUpdateAnswers}
-            onAddAnswer={(label, content) => handleAddAnswer(activeQuestion.id, label, content)}
-            onUpdateAnswer={(answerId, label, content) => handleUpdateAnswer(activeQuestion.id, answerId, label, content)}
-            onDeleteAnswer={(answerId) => handleDeleteAnswer(activeQuestion.id, answerId)}
-            onBack={() => setCurrentView("table")}
-            onNavigate={(id) => setCurrentView({ page: "answer", questionId: id })}
-          />
-        ) : currentView?.page === "practice" && activeQuestion ? (
-          // Practice page
-          <PracticePage
-            question={activeQuestion}
-            questions={currentQuestions}
-            onUpdatePractices={handleUpdatePractices}
-            onAddPractice={(tag, duration, transcript) => handleAddPractice(activeQuestion.id, tag, duration, transcript)}
-            onDeletePractice={(practiceId) => handleDeletePractice(activeQuestion.id, practiceId)}
-            onBack={() => setCurrentView("table")}
-            onNavigate={(id) => setCurrentView({ page: "practice", questionId: id })}
-          />
-        ) : (
-          // Fallback — question not found
-          <div className="flex flex-col items-center justify-center h-48 text-gray-300">
-            <span className="text-lg mb-2">Question not found</span>
-            <button
-              onClick={() => setCurrentView("table")}
-              className="text-orange-400 hover:text-orange-500 text-sm cursor-pointer"
-            >
-              ← Back to list
-            </button>
-          </div>
-        )}
+
+              {/* Category tabs */}
+              <div className="px-6 pb-3">
+                <PrepCategoryTabs
+                  categories={roleCats}
+                  activeCategoryId={activeCategoryId}
+                  onCategoryChange={handleCategoryChange}
+                  onAddCategory={handleAddCategory}
+                  onEditCategory={handleEditCategory}
+                  onDeleteCategory={handleDeleteCategory}
+                />
+              </div>
+
+              <div className="border-b border-gray-200" />
+
+              {/* Question table */}
+              <div className="flex-1 overflow-y-auto show-scrollbar px-6 py-4">
+                <PrepTable
+                  questions={currentQuestions}
+                  showCategoryTag={showCategoryTag}
+                  categoryLabelById={categoryLabelById}
+                  showTagPicker={activeCategoryId === ALL_CATEGORY_ID}
+                  availableCategories={roleCats}
+                  onUpdateQuestions={handleUpdateQuestions}
+                  onAddQuestion={handleAddQuestion}
+                  onDeleteQuestion={handleDeleteQuestion}
+                  onAddAnswer={(questionId, label, content) => handleAddAnswer(questionId, label, content)}
+                  onDeleteAnswer={(questionId, answerId) => handleDeleteAnswer(questionId, answerId)}
+                  onOpenAnswerPage={handleOpenAnswerPage}
+                  onOpenPracticePage={handleOpenPracticePage}
+                />
+              </div>
+            </>
+          ) : currentView?.page === "answer" && activeQuestion ? (
+            <AnswerPage
+              question={activeQuestion}
+              questions={currentQuestions}
+              roles={roles}
+              positions={positions}
+              onUpdateAnswers={handleUpdateAnswers}
+              onAddAnswer={(label, content) => handleAddAnswer(activeQuestion.id, label, content)}
+              onUpdateAnswer={(answerId, label, content) =>
+                handleUpdateAnswer(activeQuestion.id, answerId, label, content)
+              }
+              onDeleteAnswer={(answerId) => handleDeleteAnswer(activeQuestion.id, answerId)}
+              onBack={() => setCurrentView("table")}
+              onNavigate={(id) => setCurrentView({ page: "answer", questionId: id })}
+            />
+          ) : currentView?.page === "practice" && activeQuestion ? (
+            <PracticePage
+              question={activeQuestion}
+              questions={currentQuestions}
+              onUpdatePractices={handleUpdatePractices}
+              onAddPractice={(tag, duration, transcript) =>
+                handleAddPractice(activeQuestion.id, tag, duration, transcript)
+              }
+              onDeletePractice={(practiceId) => handleDeletePractice(activeQuestion.id, practiceId)}
+              onBack={() => setCurrentView("table")}
+              onNavigate={(id) => setCurrentView({ page: "practice", questionId: id })}
+            />
+          ) : (
+            <div className="flex flex-col items-center justify-center h-48 text-gray-300">
+              <span className="text-lg mb-2">Question not found</span>
+              <button
+                onClick={() => setCurrentView("table")}
+                className="text-orange-400 hover:text-orange-500 text-sm cursor-pointer"
+              >
+                ← Back to list
+              </button>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

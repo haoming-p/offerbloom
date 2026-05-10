@@ -1,42 +1,81 @@
-import React from "react";
+import { LuHouse, LuClipboardList, LuBriefcase, LuFolder, LuUser, LuChevronsLeft, LuChevronsRight } from "react-icons/lu";
 
-// Sidebar tabs — easy to add/remove/reorder
 const TABS = [
-  { id: "dashboard", label: "Dashboard", emoji: "🏠" },
-  { id: "prep", label: "My Prep", emoji: "📝" },
-  { id: "positions", label: "My Positions", emoji: "💼" },
-  { id: "files", label: "My Files", emoji: "📁" },
-  { id: "me", label: "Me", emoji: "👤" },
+  { id: "dashboard", label: "Dashboard", Icon: LuHouse },
+  { id: "prep", label: "My Prep", Icon: LuClipboardList },
+  { id: "positions", label: "My Positions", Icon: LuBriefcase },
+  { id: "files", label: "My Files", Icon: LuFolder },
+  { id: "me", label: "Me", Icon: LuUser },
 ];
 
-const SideBar = ({ activeTab, onTabChange, isDemo }) => {
+const SideBar = ({ activeTab, onTabChange, isDemoGuest, collapsed, onToggleCollapse }) => {
   return (
-    <div className="w-52 bg-white border-r border-gray-200 flex flex-col py-4">
-      <div className="flex flex-col gap-1 px-3">
-        {TABS.map((tab) => (
+    <aside
+      className={`bg-gray-50 border-r border-gray-200 flex flex-col py-4 transition-all duration-200 ${
+        collapsed ? "w-16" : "w-56"
+      }`}
+    >
+      {/* Section header — Main Menu (left) + collapse toggle (right). When
+          collapsed, only the toggle is shown, centered. */}
+      {collapsed ? (
+        <div className="flex justify-center px-3 mb-3">
           <button
-            key={tab.id}
-            onClick={() => onTabChange(tab.id)}
-            className={`flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm cursor-pointer transition-all text-left ${
-              activeTab === tab.id
-                ? "bg-orange-50 text-orange-500 font-medium"
-                : "text-gray-500 hover:bg-gray-50 hover:text-gray-700"
-            }`}
+            onClick={onToggleCollapse}
+            className="p-1.5 rounded-md text-gray-400 hover:text-gray-600 hover:bg-gray-100 cursor-pointer"
+            title="Expand sidebar"
           >
-            <span>{tab.emoji}</span>
-            <span>{tab.label}</span>
+            <LuChevronsRight size={16} />
           </button>
-        ))}
-      </div>
+        </div>
+      ) : (
+        <div className="flex items-center justify-between pl-5 pr-3 mb-2">
+          <span className="text-[11px] font-semibold tracking-wider text-gray-400 uppercase">
+            Main Menu
+          </span>
+          <button
+            onClick={onToggleCollapse}
+            className="p-1.5 rounded-md text-gray-400 hover:text-gray-600 hover:bg-gray-100 cursor-pointer"
+            title="Collapse sidebar"
+          >
+            <LuChevronsLeft size={16} />
+          </button>
+        </div>
+      )}
+
+      {/* Tab buttons */}
+      <nav className="flex flex-col gap-0.5 px-3">
+        {TABS.map(({ id, label, Icon }) => {
+          const isActive = activeTab === id;
+          return (
+            <button
+              key={id}
+              onClick={() => onTabChange(id)}
+              title={collapsed ? label : undefined}
+              className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm cursor-pointer transition-colors text-left ${
+                isActive
+                  ? "bg-white text-gray-900 font-medium shadow-sm"
+                  : "text-gray-500 hover:text-gray-800 hover:bg-white/60"
+              } ${collapsed ? "justify-center" : ""}`}
+            >
+              <Icon size={18} className="flex-shrink-0" />
+              {!collapsed && <span>{label}</span>}
+            </button>
+          );
+        })}
+      </nav>
 
       <div className="flex-1" />
 
-      {isDemo && (
-        <div className="px-6 py-3 border-t border-gray-100">
-          <span className="text-xs text-gray-300">Demo Mode</span>
+      {/* Demo Mode indicator — only for guests */}
+      {isDemoGuest && !collapsed && (
+        <div className="px-5 py-3 mx-3 rounded-lg bg-orange-50 border border-orange-100">
+          <span className="text-xs font-medium text-orange-600">✦ Demo Mode</span>
+          <p className="text-[11px] text-orange-400 mt-0.5">
+            Changes are temporary
+          </p>
         </div>
       )}
-    </div>
+    </aside>
   );
 };
 

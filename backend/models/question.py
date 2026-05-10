@@ -9,7 +9,7 @@ class QuestionOut(BaseModel):
     id: str
     text: str
     role_id: str
-    category_id: str
+    category_id: str = ""
     position_key: str
     order: int
     difficulty: str = ""
@@ -20,6 +20,6 @@ class QuestionOut(BaseModel):
 
 class QuestionCreate(BaseModel):
     role_id: str
-    category_id: str
+    category_id: str | None = None
     position_key: str = "general"
     text: str

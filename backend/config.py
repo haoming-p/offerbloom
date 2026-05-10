@@ -13,7 +13,7 @@ class Settings(BaseSettings):
     frontend_url: str = "http://localhost:5173"
 
     # Cloudflare R2
-    cloudflare_account_id: str = ""
+    r2_account_id: str = ""
     r2_endpoint: str = ""
     r2_access_key_id: str = ""
     r2_secret_access_key: str = ""
@@ -21,6 +21,9 @@ class Settings(BaseSettings):
     r2_public_url: str = ""
 
     anthropic_api_key: str = ""
+
+    demo_user_email: str = ""
+    cleanup_secret: str = ""
 
     class Config:
         env_file = ".env"

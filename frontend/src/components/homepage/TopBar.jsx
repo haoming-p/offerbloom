@@ -1,7 +1,17 @@
 import React from "react";
+import { LuUserPlus, LuRotateCcw } from "react-icons/lu";
 import bloomLogo from "../../assets/bloom.png";
 
-const TopBar = ({ user, showDebug, onToggleDebug, onLogoClick, onNavClick }) => {
+const TopBar = ({
+  user,
+  showDebug,
+  onToggleDebug,
+  onLogoClick,
+  onNavClick,
+  isDemoGuest,
+  onResetDemo,
+  onSaveToAccount,
+}) => {
   const initials = user?.name
     ? user.name.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2)
     : "U";
@@ -27,8 +37,29 @@ const TopBar = ({ user, showDebug, onToggleDebug, onLogoClick, onNavClick }) => 
         </button>
       </div>
 
-      {/* Right: Debug toggle + user avatar */}
+      {/* Right: Demo controls (guest) + Debug toggle + user avatar */}
       <div className="flex items-center gap-4">
+        {isDemoGuest && (
+          <>
+            <button
+              onClick={onSaveToAccount}
+              className="flex items-center gap-1.5 px-3 py-1 text-xs rounded-lg cursor-pointer bg-orange-400 text-white hover:bg-orange-500"
+              title="Create a new account to keep your demo work"
+            >
+              <LuUserPlus size={14} />
+              Save to account
+            </button>
+            <button
+              onClick={onResetDemo}
+              className="flex items-center gap-1.5 px-3 py-1 text-xs rounded-lg cursor-pointer border border-orange-200 bg-orange-50 text-orange-600 hover:bg-orange-100"
+              title="Delete your demo session and start fresh"
+            >
+              <LuRotateCcw size={14} />
+              Reset demo
+            </button>
+          </>
+        )}
+
         <button
           onClick={onToggleDebug}
           className={`px-3 py-1 text-xs rounded-lg cursor-pointer border ${

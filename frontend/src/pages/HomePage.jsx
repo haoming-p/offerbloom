@@ -6,6 +6,10 @@ import PositionsTab from "../components/homepage/PositionsTab";
 import FilesTab from "../components/homepage/filetab/FilesTab";
 import PrepTab from "../components/homepage/preptab/PrepTab";
 import MeTab from "../components/homepage/MeTab";
+import SaveToAccountModal from "../components/homepage/SaveToAccountModal";
+import ResetDemoModal from "../components/homepage/ResetDemoModal";
+import { resetDemo } from "../services/demo";
+import { saveToken } from "../services/auth";
 
 const HomePage = ({ data, user, onLogout, onUpdatePositionsData, onUpdateCategories, onOpenResources }) => {
   // Which sidebar tab is active
@@ -14,6 +18,28 @@ const HomePage = ({ data, user, onLogout, onUpdatePositionsData, onUpdateCategor
 
   // Toggle between real dashboard and raw JSON data view
   const [showDebug, setShowDebug] = useState(false);
+
+  // Sidebar collapse state — default expanded
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+
+  // Modal: "Save your demo work to a new account"
+  const [showSaveModal, setShowSaveModal] = useState(false);
+
+  // Modal: "Reset demo?" confirmation
+  const [showResetModal, setShowResetModal] = useState(false);
+  const [resetLoading, setResetLoading] = useState(false);
+
+  async function handleResetDemo() {
+    setResetLoading(true);
+    try {
+      const result = await resetDemo();
+      saveToken(result.access_token);
+      window.location.reload();
+    } catch (err) {
+      alert(`Reset failed: ${err.message}`);
+      setResetLoading(false);
+    }
+  }
 
   // Render the active tab's content
   const renderTab = () => {
@@ -34,7 +60,7 @@ const HomePage = ({ data, user, onLogout, onUpdatePositionsData, onUpdateCategor
     // Normal tab rendering
     switch (activeTab) {
       case "dashboard":
-        return <DashboardTab data={data} onNavigateToPrep={(roleId) => { setPrepDefaultRole(roleId); setActiveTab("prep"); }} />;
+        return <DashboardTab data={data} user={user} onNavigateToPrep={(roleId) => { setPrepDefaultRole(roleId); setActiveTab("prep"); }} />;
       case "positions":
         return <PositionsTab data={data} onUpdatePositionsData={onUpdatePositionsData} />;
       case "files":
@@ -43,6 +69,7 @@ const HomePage = ({ data, user, onLogout, onUpdatePositionsData, onUpdateCategor
         return (
           <PrepTab
             data={data}
+            user={user}
             defaultRoleId={prepDefaultRole}
             onUpdateCategories={onUpdateCategories}
           />
@@ -70,6 +97,9 @@ const HomePage = ({ data, user, onLogout, onUpdatePositionsData, onUpdateCategor
         onNavClick={(target) => {
           if (target === "resources") onOpenResources?.();
         }}
+        isDemoGuest={user?.is_demo_guest}
+        onResetDemo={() => setShowResetModal(true)}
+        onSaveToAccount={() => setShowSaveModal(true)}
       />
 
       {/* Body: Sidebar + Content */}
@@ -77,7 +107,9 @@ const HomePage = ({ data, user, onLogout, onUpdatePositionsData, onUpdateCategor
         <SideBar
           activeTab={activeTab}
           onTabChange={setActiveTab}
-          isDemo={!!user?.email?.startsWith("guest_")}
+          isDemoGuest={user?.is_demo_guest}
+          collapsed={sidebarCollapsed}
+          onToggleCollapse={() => setSidebarCollapsed((c) => !c)}
         />
 
         {/* Main content area — scrollable independently */}
@@ -85,6 +117,23 @@ const HomePage = ({ data, user, onLogout, onUpdatePositionsData, onUpdateCategor
           {renderTab()}
         </div>
       </div>
+
+      {/* Save-to-account modal — only reachable from demo guest */}
+      {showSaveModal && (
+        <SaveToAccountModal
+          onClose={() => setShowSaveModal(false)}
+          onSuccess={() => window.location.reload()}
+        />
+      )}
+
+      {/* Reset confirmation modal — only reachable from demo guest */}
+      {showResetModal && (
+        <ResetDemoModal
+          loading={resetLoading}
+          onCancel={() => setShowResetModal(false)}
+          onConfirm={handleResetDemo}
+        />
+      )}
     </div>
   );
 };

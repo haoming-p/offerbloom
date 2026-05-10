@@ -2,9 +2,11 @@ import { getToken } from "./auth";
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
+// Pass categoryId = null (or omit) to get questions across ALL categories — used by the "All" tab.
 export async function fetchQuestions(roleId, categoryId, positionKey = "general") {
   const token = getToken();
-  const params = new URLSearchParams({ role_id: roleId, category_id: categoryId, position_key: positionKey });
+  const params = new URLSearchParams({ role_id: roleId, position_key: positionKey });
+  if (categoryId) params.set("category_id", categoryId);
   const res = await fetch(`${API_URL}/questions/?${params}`, {
     headers: { Authorization: `Bearer ${token}` },
   });
@@ -13,15 +15,18 @@ export async function fetchQuestions(roleId, categoryId, positionKey = "general"
   return data; // [{ id, text, role_id, category_id, position_key, order }]
 }
 
+// categoryId can be null/empty for "no tag"
 export async function addQuestion(roleId, categoryId, positionKey = "general", text) {
   const token = getToken();
+  const body = { role_id: roleId, position_key: positionKey, text };
+  if (categoryId) body.category_id = categoryId;
   const res = await fetch(`${API_URL}/questions/`, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${token}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ role_id: roleId, category_id: categoryId, position_key: positionKey, text }),
+    body: JSON.stringify(body),
   });
   const data = await res.json();
   if (!res.ok) throw new Error(data.detail || "Failed to add question");
