@@ -1,255 +1,196 @@
 #!/usr/bin/env python3
-"""Sync demo data from local Docker Neo4j to production AuraDB.
+"""Sync one user's full subgraph from local Neo4j to prod AuraDB.
 
-Reads the user node + all owned data (files metadata, questions, answers, practices)
-matching --email, wipes existing prod data for that user, and re-creates it on prod.
+Covers every label/edge in the current schema:
+  :User, :File, :Question, :Answer, :Practice, :Role, :Position,
+  :ChatSession, :Message
+  + LINKED_TO, FOR_ROLE, OWNS, HAS_*, etc.
 
-Files share R2 keys (same bucket across local/prod), so we only clone metadata.
+Files share R2 keys across local/prod, so we only clone metadata.
+ChatSessions + Messages are included so the demo carries chat history.
 
 USAGE
 -----
-From the project root, activate the backend venv and run:
-
-    python backend/scripts/sync_demo_to_prod.py \\
-      --prod-uri "neo4j+s://YOUR_INSTANCE.databases.neo4j.io" \\
-      --prod-user "YOUR_INSTANCE_ID" \\
+    ./venv/bin/python scripts/sync_demo_to_prod.py \\
+      --prod-uri   "neo4j+s://YOUR_INSTANCE.databases.neo4j.io" \\
+      --prod-user  "YOUR_INSTANCE_ID" \\
       --prod-password "YOUR_AURA_PASSWORD"
 
-Optional flags:
-    --email <email>         Defaults to haoming.p@berkeley.edu
-    --local-uri <uri>       Defaults to bolt://localhost:7687
-    --local-user <user>     Defaults to neo4j
-    --local-password <pw>   Defaults to password
-    --yes                   Skip the interactive confirmation prompt
-    --dry-run               Print what would happen, don't write anything
+Flags: --email, --local-uri/--local-user/--local-password, --yes, --dry-run.
 """
 
 import argparse
 import sys
-
 from neo4j import GraphDatabase
 
+DEFAULT_EMAIL = "haoming.p@berkeley.edu"
 DEFAULT_LOCAL_URI = "bolt://localhost:7687"
 DEFAULT_LOCAL_USER = "neo4j"
 DEFAULT_LOCAL_PASSWORD = "password"
-DEFAULT_EMAIL = "haoming.p@berkeley.edu"
 
 
-def read_user_bundle(session, email):
-    """Pull user node + all owned data from a Neo4j session."""
-    user = session.run(
-        "MATCH (u:User {email: $email}) RETURN u",
-        email=email,
-    ).single()
+def read_bundle(s, email):
+    """Fetch everything owned by a user. Returns None if user is missing."""
+    user = s.run("MATCH (u:User {email: $email}) RETURN u", email=email).single()
     if not user:
         return None
 
-    user_node = dict(user["u"])
-
-    files = session.run(
-        "MATCH (u:User {email: $email})-[:OWNS]->(f:File) RETURN f",
-        email=email,
-    ).data()
-
-    questions = session.run(
-        """
-        MATCH (u:User {email: $email})-[:HAS_QUESTION]->(q:Question)
-        OPTIONAL MATCH (q)-[:HAS_ANSWER]->(a:Answer)
-        OPTIONAL MATCH (q)-[:HAS_PRACTICE]->(p:Practice)
-        RETURN q,
-               collect(DISTINCT a) AS answers,
-               collect(DISTINCT p) AS practices
-        """,
-        email=email,
-    ).data()
+    def fetch(query):
+        return s.run(query, email=email).data()
 
     return {
-        "user": user_node,
-        "files": [dict(r["f"]) for r in files],
-        "questions": [
-            {
-                "q": dict(r["q"]),
-                "answers": [dict(a) for a in r["answers"] if a is not None],
-                "practices": [dict(p) for p in r["practices"] if p is not None],
-            }
-            for r in questions
-        ],
+        "user": dict(user["u"]),
+        "files": fetch("MATCH (:User {email: $email})-[:OWNS]->(n:File) RETURN n"),
+        "roles": fetch("MATCH (:User {email: $email})-[:HAS_ROLE]->(n:Role) RETURN n"),
+        "positions": fetch("MATCH (:User {email: $email})-[:HAS_POSITION]->(n:Position) RETURN n"),
+        "questions": fetch("""
+            MATCH (:User {email: $email})-[:HAS_QUESTION]->(q:Question)
+            OPTIONAL MATCH (q)-[:HAS_ANSWER]->(a:Answer)
+            OPTIONAL MATCH (q)-[:HAS_PRACTICE]->(p:Practice)
+            RETURN q, collect(DISTINCT a) AS answers, collect(DISTINCT p) AS practices
+        """),
+        "sessions": fetch("""
+            MATCH (:User {email: $email})-[:HAS_CHAT]->(cs:ChatSession)
+            OPTIONAL MATCH (cs)-[:HAS_MESSAGE]->(m:Message)
+            RETURN cs, collect(DISTINCT m) AS messages
+        """),
+        "links": fetch("""
+            MATCH (:User {email: $email})-[:OWNS]->(f:File)-[:LINKED_TO]->(t)
+            WHERE t:Role OR t:Position
+            RETURN f.id AS file_id, t.id AS target_id, labels(t)[0] AS target_label
+        """),
     }
 
 
-def wipe_owned_data(session, email):
-    """Delete all owned data for a user. Keeps the user node intact."""
-    session.run(
-        """
-        MATCH (u:User {email: $email})-[:HAS_QUESTION]->(q:Question)
-        OPTIONAL MATCH (q)-[:HAS_ANSWER]->(a:Answer)
-        OPTIONAL MATCH (q)-[:HAS_PRACTICE]->(p:Practice)
-        DETACH DELETE q, a, p
-        """,
-        email=email,
-    )
-    session.run(
-        """
-        MATCH (u:User {email: $email})-[:OWNS]->(f:File)
-        DETACH DELETE f
-        """,
-        email=email,
-    )
+def wipe(s, email):
+    """Delete everything owned by this user. Keeps the :User node intact."""
+    s.run("""
+        MATCH (u:User {email: $email})
+        OPTIONAL MATCH (u)-[:HAS_QUESTION]->(q:Question)
+        OPTIONAL MATCH (q)-[:HAS_ANSWER]->(a)
+        OPTIONAL MATCH (q)-[:HAS_PRACTICE]->(p)
+        OPTIONAL MATCH (u)-[:OWNS]->(f:File)
+        OPTIONAL MATCH (u)-[:HAS_ROLE]->(r:Role)
+        OPTIONAL MATCH (u)-[:HAS_POSITION]->(pos:Position)
+        OPTIONAL MATCH (u)-[:HAS_CHAT]->(cs:ChatSession)
+        OPTIONAL MATCH (cs)-[:HAS_MESSAGE]->(m:Message)
+        DETACH DELETE q, a, p, f, r, pos, cs, m
+    """, email=email)
 
 
-def upsert_user(session, user_node):
-    """Create user if missing, otherwise overwrite all properties."""
-    session.run(
-        """
-        MERGE (u:User {email: $email})
-        SET u = $props
-        """,
-        email=user_node["email"],
-        props=user_node,
-    )
+def write_bundle(s, b):
+    """Recreate the full subgraph for this user on the target session."""
+    email = b["user"]["email"]
+    s.run("MERGE (u:User {email: $email}) SET u = $props", email=email, props=b["user"])
 
-
-def write_bundle(session, bundle):
-    """Write user + all owned data to a target session."""
-    user = bundle["user"]
-    upsert_user(session, user)
-
-    for f_props in bundle["files"]:
-        session.run(
-            """
-            MATCH (u:User {email: $email})
-            CREATE (f:File)
-            SET f = $props
-            CREATE (u)-[:OWNS]->(f)
-            """,
-            email=user["email"],
-            props=f_props,
+    def create_owned(rel, label, props):
+        s.run(
+            f"MATCH (u:User {{email: $email}}) CREATE (u)-[:{rel}]->(n:{label}) SET n = $props",
+            email=email, props=props,
         )
 
-    for q_data in bundle["questions"]:
-        q_props = q_data["q"]
-        q_id = q_props["id"]
-        session.run(
-            """
-            MATCH (u:User {email: $email})
-            CREATE (q:Question)
-            SET q = $props
-            CREATE (u)-[:HAS_QUESTION]->(q)
-            """,
-            email=user["email"],
-            props=q_props,
+    for rec in b["files"]:     create_owned("OWNS", "File", dict(rec["n"]))
+    for rec in b["roles"]:     create_owned("HAS_ROLE", "Role", dict(rec["n"]))
+    for rec in b["positions"]: create_owned("HAS_POSITION", "Position", dict(rec["n"]))
+
+    # Position -> Role edges, reconstructed from Position.role_id (set by graph_sync).
+    s.run("""
+        MATCH (u:User {email: $email})-[:HAS_POSITION]->(p:Position)
+        WHERE p.role_id IS NOT NULL AND p.role_id <> ''
+        MATCH (u)-[:HAS_ROLE]->(r:Role {id: p.role_id})
+        MERGE (p)-[:FOR_ROLE]->(r)
+    """, email=email)
+
+    for rec in b["questions"]:
+        q = dict(rec["q"])
+        create_owned("HAS_QUESTION", "Question", q)
+        for child, rel, label in (
+            (rec["answers"], "HAS_ANSWER", "Answer"),
+            (rec["practices"], "HAS_PRACTICE", "Practice"),
+        ):
+            for node in child:
+                if node is None:
+                    continue
+                s.run(
+                    f"MATCH (q:Question {{id: $qid}}) CREATE (q)-[:{rel}]->(n:{label}) SET n = $props",
+                    qid=q["id"], props=dict(node),
+                )
+
+    for rec in b["sessions"]:
+        cs = dict(rec["cs"])
+        create_owned("HAS_CHAT", "ChatSession", cs)
+        for m in rec["messages"]:
+            if m is None:
+                continue
+            s.run(
+                "MATCH (cs:ChatSession {id: $cid}) CREATE (cs)-[:HAS_MESSAGE]->(m:Message) SET m = $props",
+                cid=cs["id"], props=dict(m),
+            )
+
+    # File -> Role/Position links (LINKED_TO). Must run after files and targets exist.
+    for link in b["links"]:
+        s.run(
+            f"MATCH (f:File {{id: $fid}}), (t:{link['target_label']} {{id: $tid}}) "
+            f"MERGE (f)-[:LINKED_TO]->(t)",
+            fid=link["file_id"], tid=link["target_id"],
         )
-        for a_props in q_data["answers"]:
-            session.run(
-                """
-                MATCH (q:Question {id: $q_id})
-                CREATE (a:Answer)
-                SET a = $props
-                CREATE (q)-[:HAS_ANSWER]->(a)
-                """,
-                q_id=q_id,
-                props=a_props,
-            )
-        for p_props in q_data["practices"]:
-            session.run(
-                """
-                MATCH (q:Question {id: $q_id})
-                CREATE (p:Practice)
-                SET p = $props
-                CREATE (q)-[:HAS_PRACTICE]->(p)
-                """,
-                q_id=q_id,
-                props=p_props,
-            )
 
 
-def fmt_bundle_summary(bundle):
-    n_questions = len(bundle["questions"])
-    n_answers = sum(len(q["answers"]) for q in bundle["questions"])
-    n_practices = sum(len(q["practices"]) for q in bundle["questions"])
+def summary(b):
+    if not b:
+        return "(none)"
+    n_ans = sum(len([a for a in q["answers"] if a]) for q in b["questions"])
+    n_prac = sum(len([p for p in q["practices"] if p]) for q in b["questions"])
+    n_msgs = sum(len([m for m in s["messages"] if m]) for s in b["sessions"])
     return (
-        f"   • Files: {len(bundle['files'])}\n"
-        f"   • Questions: {n_questions}\n"
-        f"   • Answers: {n_answers}\n"
-        f"   • Practices: {n_practices}"
+        f"files={len(b['files'])}, roles={len(b['roles'])}, positions={len(b['positions'])}, "
+        f"questions={len(b['questions'])}, answers={n_ans}, practices={n_prac}, "
+        f"sessions={len(b['sessions'])}, messages={n_msgs}, links={len(b['links'])}"
     )
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Sync demo user data from local Neo4j to production AuraDB.",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-    )
-    parser.add_argument("--local-uri", default=DEFAULT_LOCAL_URI)
-    parser.add_argument("--local-user", default=DEFAULT_LOCAL_USER)
-    parser.add_argument("--local-password", default=DEFAULT_LOCAL_PASSWORD)
-    parser.add_argument("--prod-uri", required=True)
-    parser.add_argument("--prod-user", required=True)
-    parser.add_argument("--prod-password", required=True)
-    parser.add_argument("--email", default=DEFAULT_EMAIL)
-    parser.add_argument("--yes", action="store_true", help="Skip the confirmation prompt")
-    parser.add_argument("--dry-run", action="store_true", help="Show what would happen, don't write")
-    args = parser.parse_args()
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--local-uri", default=DEFAULT_LOCAL_URI)
+    ap.add_argument("--local-user", default=DEFAULT_LOCAL_USER)
+    ap.add_argument("--local-password", default=DEFAULT_LOCAL_PASSWORD)
+    ap.add_argument("--prod-uri", required=True)
+    ap.add_argument("--prod-user", required=True)
+    ap.add_argument("--prod-password", required=True)
+    ap.add_argument("--email", default=DEFAULT_EMAIL)
+    ap.add_argument("--yes", action="store_true")
+    ap.add_argument("--dry-run", action="store_true")
+    args = ap.parse_args()
 
-    print(f"📥 Local: {args.local_uri}")
-    local_driver = GraphDatabase.driver(
-        args.local_uri,
-        auth=(args.local_user, args.local_password),
-        notifications_disabled_categories=["UNRECOGNIZED"],
-    )
-    print(f"📤 Prod:  {args.prod_uri}")
-    prod_driver = GraphDatabase.driver(
-        args.prod_uri,
-        auth=(args.prod_user, args.prod_password),
-        notifications_disabled_categories=["UNRECOGNIZED"],
-    )
-
+    local = GraphDatabase.driver(args.local_uri, auth=(args.local_user, args.local_password),
+                                 notifications_disabled_categories=["UNRECOGNIZED"])
+    prod = GraphDatabase.driver(args.prod_uri, auth=(args.prod_user, args.prod_password),
+                                notifications_disabled_categories=["UNRECOGNIZED"])
     try:
-        # 1. Read local
-        with local_driver.session() as session:
-            local_bundle = read_user_bundle(session, args.email)
-
+        with local.session() as s:
+            local_bundle = read_bundle(s, args.email)
         if not local_bundle:
-            print(f"\n❌ User {args.email} not found in local DB. Nothing to sync.")
-            sys.exit(1)
+            print(f"❌ User {args.email} not found locally."); sys.exit(1)
 
-        # 2. Read prod (just for the summary of what'll be wiped)
-        with prod_driver.session() as session:
-            prod_bundle = read_user_bundle(session, args.email)
+        with prod.session() as s:
+            prod_bundle = read_bundle(s, args.email)
 
-        print(f"\n📦 Local data for {args.email}:")
-        print(fmt_bundle_summary(local_bundle))
-
-        if prod_bundle:
-            print(f"\n🗑  Existing prod data for {args.email} (will be wiped):")
-            print(fmt_bundle_summary(prod_bundle))
-        else:
-            print(f"\n✨ User {args.email} doesn't exist on prod yet — will be created.")
+        print(f"📥 Local:  {summary(local_bundle)}")
+        print(f"📤 Prod:   {summary(prod_bundle)}  (will be replaced)")
 
         if args.dry_run:
-            print("\n[dry-run] No changes written.")
-            return
+            print("[dry-run] No changes written."); return
+        if not args.yes and input("\nProceed? [y/N]: ").strip().lower() != "y":
+            print("Aborted."); return
 
-        # 3. Confirm
-        if not args.yes:
-            confirm = input("\nProceed? [y/N]: ").strip().lower()
-            if confirm != "y":
-                print("Aborted.")
-                return
-
-        # 4. Wipe + write
-        with prod_driver.session() as session:
+        with prod.session() as s:
             if prod_bundle:
-                print("\n🧹 Wiping owned data on prod...")
-                wipe_owned_data(session, args.email)
-            print("📤 Writing data to prod...")
-            write_bundle(session, local_bundle)
+                wipe(s, args.email)
+            write_bundle(s, local_bundle)
 
-        print("\n✅ Done. Visit https://offerbloom.vercel.app to verify.")
-
+        print("✅ Done.")
     finally:
-        local_driver.close()
-        prod_driver.close()
+        local.close(); prod.close()
 
 
 if __name__ == "__main__":
