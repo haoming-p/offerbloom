@@ -2,7 +2,26 @@ import React, { useState, useEffect } from "react";
 import FilesList from "./FilesList";
 import ContentLibrary from "./ContentLibrary";
 import FileAIChat from "./FileAIChat";
-import { listFiles, deleteFile } from "../../../services/files";
+import { listFiles, deleteFile, updateFileLinks } from "../../../services/files";
+
+// Convert backend's [{kind, id, label}] into the flat string array the UI uses
+// (raw role id, or "pos-{positionId}" for positions).
+const linksToFlat = (links = []) =>
+  links.map((l) => (l.kind === "position" ? `pos-${l.id}` : l.id));
+
+// Reverse: split flat array back into role_ids / position_ids for the backend.
+const flatToPayload = (flat = []) => {
+  const roleIds = [];
+  const positionIds = [];
+  for (const v of flat) {
+    if (typeof v === "string" && v.startsWith("pos-")) {
+      positionIds.push(v.slice(4));
+    } else {
+      roleIds.push(v);
+    }
+  }
+  return { roleIds, positionIds };
+};
 
 // View tabs for the files section
 const VIEW_TABS = [
@@ -34,7 +53,7 @@ const FilesTab = ({ data }) => {
             type: f.type || "file",
             size: f.size || null,
             url: f.url || null,
-            linkedTo: f.linkedTo || [],
+            linkedTo: linksToFlat(f.links),
           }))
         )
       )
@@ -77,10 +96,17 @@ const FilesTab = ({ data }) => {
     if (selectedFileId === fileId) setSelectedFileId(null);
   };
 
-  const handleUpdateFileLinks = (fileId, newLinks) => {
+  const handleUpdateFileLinks = async (fileId, newLinks) => {
+    // Optimistic UI; revert if backend rejects.
+    const prev = files;
     setFiles(files.map((f) =>
       f.id === fileId ? { ...f, linkedTo: newLinks } : f
     ));
+    try {
+      await updateFileLinks(fileId, flatToPayload(newLinks));
+    } catch {
+      setFiles(prev);
+    }
   };
 
   // Build link targets from roles + positions

@@ -9,6 +9,7 @@ from routers.questions import router as questions_router
 from routers.answers import router as answers_router
 from routers.practices import router as practices_router
 from routers.chat import router as chat_router
+from routers.chat_sessions import router as chat_sessions_router
 from routers.user_data import router as user_data_router
 from routers.public import router as public_router
 from routers.demo import router as demo_router
@@ -30,6 +31,7 @@ app.include_router(questions_router)
 app.include_router(answers_router)
 app.include_router(practices_router)
 app.include_router(chat_router)
+app.include_router(chat_sessions_router)
 app.include_router(user_data_router)
 app.include_router(public_router)
 app.include_router(demo_router)

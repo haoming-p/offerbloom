@@ -1,4 +1,6 @@
 import base64
+import time
+import uuid
 from fastapi import APIRouter, HTTPException, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
@@ -10,6 +12,7 @@ from config import settings
 from auth.jwt import decode_token
 from database import get_db
 from storage import download_file
+from services.rag_context import build_rag_context
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 bearer = HTTPBearer()
@@ -28,6 +31,8 @@ class ChatRequest(BaseModel):
     context: str = "general"  # "general" | "answer_draft" | "file_review"
     context_data: Any = None  # question text, section label, etc.
     file_id: Optional[str] = None
+    question_id: Optional[str] = None  # used by RAG to retrieve saved answers/practices/linked files
+    session_id: Optional[str] = None  # if set, this chat turn is appended to the session's :Message log
     history: list[ChatMessage] = []
 
 
@@ -104,6 +109,72 @@ Keep total reply under ~400 words.""",
 }
 
 
+def _persist_turn(
+    db: Session,
+    user_id: str,
+    session_id: str,
+    user_text: str,
+    assistant_text: str,
+) -> None:
+    """Append a user message + assistant reply to a chat session.
+
+    Ownership-checks the session in the same query (so we can't write into
+    someone else's session even if the client lies about session_id). On any
+    error we swallow it — chat should never fail because persistence failed.
+    """
+    try:
+        # Pull current message count to assign monotonic order indices.
+        record = db.run(
+            """
+            MATCH (u:User {id: $user_id})-[:HAS_CHAT]->(s:ChatSession {id: $s_id})
+            OPTIONAL MATCH (s)-[:HAS_MESSAGE]->(m:Message)
+            RETURN s.id AS sid, count(m) AS n
+            """,
+            user_id=user_id,
+            s_id=session_id,
+        ).single()
+        if not record or not record["sid"]:
+            return  # session not owned by user, or doesn't exist
+
+        next_order = record["n"]
+        now = int(time.time() * 1000)
+
+        db.run(
+            """
+            MATCH (s:ChatSession {id: $s_id})
+            CREATE (s)-[:HAS_MESSAGE]->(:Message {
+                id: $u_id, role: 'user', content: $u_text,
+                created_at: $now, order: $u_order
+            })
+            CREATE (s)-[:HAS_MESSAGE]->(:Message {
+                id: $a_id, role: 'assistant', content: $a_text,
+                created_at: $now, order: $a_order
+            })
+            SET s.last_used_at = $now
+            """,
+            s_id=session_id,
+            u_id=str(uuid.uuid4()),
+            u_text=user_text,
+            u_order=next_order,
+            a_id=str(uuid.uuid4()),
+            a_text=assistant_text,
+            a_order=next_order + 1,
+            now=now,
+        )
+
+        # Auto-title the session from the first user message (first 60 chars).
+        # Helps the history dropdown show something recognizable.
+        if next_order == 0:
+            title = user_text.strip().replace("\n", " ")[:60]
+            db.run(
+                "MATCH (s:ChatSession {id: $s_id}) SET s.title = $title",
+                s_id=session_id,
+                title=title,
+            )
+    except Exception as e:
+        print(f"[chat] persistence failed for session={session_id}: {e}")
+
+
 def _load_file_for_ai(db: Session, user_id: str, file_id: str):
     """Return (content_block, name, content_type) or raise 404/413."""
     record = db.run(
@@ -167,6 +238,23 @@ def chat(
     if body.context_data:
         system += f"\n\nContext: {body.context_data}"
 
+    # ---------------------------------------------------------------------
+    # RAG INJECTION POINT
+    # If the frontend tells us which question the user is working on, pull
+    # that question's role / position / saved answers / saved practices /
+    # linked file text from the graph and append it to the system prompt.
+    # See services/rag_context.py for exactly what's retrieved + token caps.
+    # Silent failure: if retrieval errors, chat still works without context.
+    # ---------------------------------------------------------------------
+    if body.question_id:
+        try:
+            rag_block = build_rag_context(db, user_id, body.question_id)
+            if rag_block:
+                system += "\n\n" + rag_block
+        except Exception as e:
+            # Don't break chat if RAG retrieval fails — just log and continue.
+            print(f"[chat] RAG retrieval failed for q={body.question_id}: {e}")
+
     messages = [{"role": m.role, "content": m.content} for m in body.history]
 
     file_block = None
@@ -187,4 +275,15 @@ def chat(
         messages=messages,
     )
 
-    return ChatResponse(reply=response.content[0].text)
+    reply_text = response.content[0].text
+
+    # ---------------------------------------------------------------------
+    # CHAT PERSISTENCE (Phase D1)
+    # If the client passed session_id, append this user turn + AI reply as
+    # :Message nodes on the session. See routers/chat_sessions.py for the
+    # session lifecycle and persistence helper above for the write logic.
+    # ---------------------------------------------------------------------
+    if body.session_id:
+        _persist_turn(db, user_id, body.session_id, body.message, reply_text)
+
+    return ChatResponse(reply=reply_text)

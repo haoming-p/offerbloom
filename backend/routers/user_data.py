@@ -7,6 +7,7 @@ from neo4j import Session
 
 from database import get_db
 from auth.jwt import decode_token
+from services.graph_sync import sync_user_from_json
 
 router = APIRouter(prefix="/user-data", tags=["user-data"])
 bearer = HTTPBearer()
@@ -75,6 +76,10 @@ def update_user_data(
         statuses=json.dumps(data.statuses),
         categories=json.dumps(data.categories),
     )
+
+    # Mirror roles/positions to graph nodes so RAG can traverse them.
+    sync_user_from_json(db, user_id)
+
     return UserDataOut(
         roles=data.roles,
         positions=data.positions,

@@ -7,6 +7,7 @@ from neo4j import Session
 
 from database import get_db
 from auth.jwt import decode_token
+from services.graph_sync import sync_user_from_json
 
 router = APIRouter(prefix="/onboarding", tags=["onboarding"])
 bearer = HTTPBearer()
@@ -46,5 +47,8 @@ def save_onboarding(
         roles=json.dumps(data.roles),
         positions=json.dumps(data.positions),
     )
+
+    # Mirror roles/positions to graph nodes so RAG can traverse them.
+    sync_user_from_json(db, user_id)
 
     return {"status": "ok"}
