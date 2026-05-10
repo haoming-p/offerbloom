@@ -43,11 +43,21 @@ def _strip_html(text: str) -> str:
     return text
 
 
-def build_rag_context(db: Session, user_id: str, question_id: str) -> str:
+def build_rag_context(
+    db: Session,
+    user_id: str,
+    question_id: str,
+    selected_answer_id: str | None = None,
+    selected_practice_id: str | None = None,
+) -> str:
     """Return a single text block of retrieved context, or '' if nothing found.
 
     Cypher does most of the work in one query: walk from the Question to its
     Role / Position / Answers / Practices, plus any files LINKED_TO either node.
+
+    If selected_answer_id or selected_practice_id is set, that item is marked
+    "[FOCUS]" in the prompt + a top-line instruction tells the model that
+    "this answer" / "this practice" refers to it.
     """
     record = db.run(
         """
@@ -107,40 +117,63 @@ def build_rag_context(db: Session, user_id: str, question_id: str) -> str:
 
     # --- 3. Saved answers for this question ---
     answers = record["answers"] or []
+    focused_answer_label = None
     if answers:
         parts = ["Saved answers (the user's actual saved drafts):"]
         for a in answers:
             label = a.get("label", "(untitled)")
             content = _strip_html(a.get("content", ""))[:MAX_ANSWER_CHARS]
-            if content:
-                parts.append(f"  — {label}: {content}")
+            if not content:
+                continue
+            marker = ""
+            if selected_answer_id and a.get("id") == selected_answer_id:
+                marker = " [FOCUS]"
+                focused_answer_label = label
+            parts.append(f"  — {label}{marker}: {content}")
         if len(parts) > 1:
             sections.append("\n".join(parts))
 
     # --- 4. Saved practices for this question ---
     practices = record["practices"] or []
+    focused_practice_tag = None
     if practices:
-        # Most recent first; cap count.
-        practices = sorted(practices, key=lambda p: p.get("created_at", 0), reverse=True)
-        practices = practices[:MAX_PRACTICES_INCLUDED]
+        # Sort by recency, but always include the focused practice even if it's
+        # older than MAX_PRACTICES_INCLUDED's cutoff would normally allow.
+        practices_sorted = sorted(practices, key=lambda p: p.get("created_at", 0), reverse=True)
+        keep = practices_sorted[:MAX_PRACTICES_INCLUDED]
+        if selected_practice_id and not any(p.get("id") == selected_practice_id for p in keep):
+            focus = next((p for p in practices_sorted if p.get("id") == selected_practice_id), None)
+            if focus:
+                keep = [focus] + keep[: MAX_PRACTICES_INCLUDED - 1]
+
         parts = ["Saved practice attempts (most recent first):"]
-        for p in practices:
+        for p in keep:
             tag = p.get("tag", "")
             transcript = (p.get("transcript", "") or "")[:MAX_PRACTICE_CHARS]
             if not transcript or transcript.startswith("(Voice transcript"):
                 continue
-            parts.append(f"  — [{tag}] {transcript}")
+            marker = ""
+            if selected_practice_id and p.get("id") == selected_practice_id:
+                marker = " [FOCUS]"
+                focused_practice_tag = tag
+            parts.append(f"  — [{tag}]{marker} {transcript}")
             fb_raw = p.get("ai_feedback")
             if fb_raw:
+                # ai_feedback is now stored as raw markdown text. Older rows may still
+                # contain a JSON string ({score, strengths, improvements}); render
+                # either form compactly for the prompt.
                 try:
                     fb = json.loads(fb_raw)
-                    parts.append(
-                        f"    feedback: score {fb.get('score', '?')}/10. "
-                        f"Strengths: {'; '.join(fb.get('strengths', [])[:2])}. "
-                        f"Improvements: {'; '.join(fb.get('improvements', [])[:2])}."
-                    )
+                    if isinstance(fb, dict) and "score" in fb:
+                        parts.append(
+                            f"    feedback: score {fb.get('score', '?')}/10. "
+                            f"Strengths: {'; '.join(fb.get('strengths', [])[:2])}. "
+                            f"Improvements: {'; '.join(fb.get('improvements', [])[:2])}."
+                        )
+                    else:
+                        parts.append(f"    saved feedback: {str(fb_raw)[:400]}")
                 except (TypeError, json.JSONDecodeError):
-                    pass
+                    parts.append(f"    saved feedback: {str(fb_raw)[:400]}")
         if len(parts) > 1:
             sections.append("\n".join(parts))
 
@@ -161,10 +194,23 @@ def build_rag_context(db: Session, user_id: str, question_id: str) -> str:
     if not sections:
         return ""
 
-    header = (
-        "=== RETRIEVED USER CONTEXT (RAG) ===\n"
+    header_lines = [
+        "=== RETRIEVED USER CONTEXT (RAG) ===",
         "Use this saved context to ground your reply. Do not invent details "
         "beyond what's here. If something the user is asking about isn't present, "
-        "say so and ask for it.\n"
-    )
+        "say so and ask for it.",
+    ]
+    if focused_answer_label:
+        header_lines.append(
+            f'When the user says "this answer" / "the selected answer" / "refine it", '
+            f'they mean the [FOCUS] item below labeled "{focused_answer_label}". '
+            f'Center your reply on that item.'
+        )
+    if focused_practice_tag:
+        header_lines.append(
+            f'When the user says "this practice" / "give feedback", they mean the '
+            f'[FOCUS] practice below tagged "{focused_practice_tag}". '
+            f'Center your reply on that transcript.'
+        )
+    header = "\n".join(header_lines) + "\n"
     return header + "\n\n".join(sections) + "\n=== END RETRIEVED CONTEXT ==="

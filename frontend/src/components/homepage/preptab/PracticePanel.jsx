@@ -1,17 +1,39 @@
 import { useState, useRef } from "react";
 import { LuMic, LuSquare, LuRotateCcw, LuSave } from "react-icons/lu";
-import { requestFeedback } from "../../../services/practices";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { defaultPracticeTag } from "../../../utils/timestamps";
 
-const PracticePanel = ({ question, onUpdatePractices, onAddPractice, onAddAnswer, onDeletePractice }) => {
+// Same markdown styling as the AI panel — keeps saved feedback on the practice
+// card visually consistent with how it looked inside the chat bubble.
+const mdComponents = {
+  h1: (p) => <h1 className="text-base font-bold text-gray-800 mt-3 mb-1.5" {...p} />,
+  h2: (p) => <h2 className="text-sm font-bold text-gray-800 mt-3 mb-1.5" {...p} />,
+  h3: (p) => <h3 className="text-sm font-semibold text-gray-700 mt-2 mb-1" {...p} />,
+  p: (p) => <p className="text-sm text-gray-700 leading-relaxed my-1.5" {...p} />,
+  strong: (p) => <strong className="font-semibold text-gray-900" {...p} />,
+  em: (p) => <em className="italic text-gray-700" {...p} />,
+  ul: (p) => <ul className="list-disc pl-5 my-1.5 space-y-1 text-sm text-gray-700" {...p} />,
+  ol: (p) => <ol className="list-decimal pl-5 my-1.5 space-y-1 text-sm text-gray-700" {...p} />,
+  li: (p) => <li className="leading-relaxed" {...p} />,
+  hr: () => <hr className="my-3 border-gray-200" />,
+};
+
+const PracticePanel = ({
+  question,
+  selectedPracticeId,
+  onSelectPractice,
+  onUpdatePractices,
+  onAddPractice,
+  onAddAnswer,
+  onDeletePractice,
+}) => {
   const [recordingState, setRecordingState] = useState("idle");
   const [recordingTime, setRecordingTime] = useState(0);
   const [timerId, setTimerId] = useState(null);
   const [pendingTag, setPendingTag] = useState("");
   const [pendingTranscript, setPendingTranscript] = useState("");
   const [audioUrl, setAudioUrl] = useState(null);
-  const [expandedId, setExpandedId] = useState(null);
-  const [feedbackLoadingId, setFeedbackLoadingId] = useState(null);
 
   const mediaRecorderRef = useRef(null);
   const chunksRef = useRef([]);
@@ -99,11 +121,11 @@ const PracticePanel = ({ question, onUpdatePractices, onAddPractice, onAddAnswer
 
     if (onAddPractice) {
       const saved = await onAddPractice(tag, duration, transcript);
-      if (saved) setExpandedId(saved.id);
+      if (saved) onSelectPractice?.(saved.id);
     } else {
       const newP = { id: `${Date.now()}`, tag, duration, transcript, aiFeedback: null, createdAt: Date.now() };
       onUpdatePractices([newP, ...(question.practices || [])]);
-      setExpandedId(newP.id);
+      onSelectPractice?.(newP.id);
     }
 
     const isReal = transcript && !transcript.startsWith("(No transcript");
@@ -112,26 +134,10 @@ const PracticePanel = ({ question, onUpdatePractices, onAddPractice, onAddAnswer
     }
   };
 
-  const handleRequestFeedback = async (practiceId) => {
-    setFeedbackLoadingId(practiceId);
-    try {
-      const updated = await requestFeedback(practiceId);
-      onUpdatePractices(
-        (question.practices || []).map((p) =>
-          p.id === practiceId ? { ...p, aiFeedback: updated.ai_feedback } : p
-        )
-      );
-    } catch (err) {
-      alert(err.message || "Failed to get feedback");
-    } finally {
-      setFeedbackLoadingId(null);
-    }
-  };
-
   const handleDeletePractice = (practiceId) => {
     if (onDeletePractice) onDeletePractice(practiceId);
     else onUpdatePractices((question.practices || []).filter((p) => p.id !== practiceId));
-    if (expandedId === practiceId) setExpandedId(null);
+    if (selectedPracticeId === practiceId) onSelectPractice?.(null);
   };
 
   const formatTime = (seconds) => {
@@ -245,65 +251,72 @@ const PracticePanel = ({ question, onUpdatePractices, onAddPractice, onAddAnswer
         </p>
       ) : (
         <div className="flex flex-col gap-3">
-          {practices.map((practice) => (
-            <div key={practice.id} className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+          {practices.map((practice) => {
+            const isSelected = selectedPracticeId === practice.id;
+            // ai_feedback now stores raw markdown. Pre-existing rows may still
+            // contain a JSON string from the old PATCH endpoint — accept either
+            // as a string for the markdown renderer.
+            const feedbackText =
+              typeof practice.aiFeedback === "string"
+                ? practice.aiFeedback
+                : practice.aiFeedback
+                ? JSON.stringify(practice.aiFeedback)
+                : "";
+            return (
               <div
-                onClick={() => setExpandedId(expandedId === practice.id ? null : practice.id)}
-                className="flex items-center justify-between px-4 py-3 cursor-pointer hover:bg-gray-50"
+                key={practice.id}
+                className={`bg-white rounded-xl border overflow-hidden ${
+                  isSelected ? "border-orange-300 ring-1 ring-orange-200" : "border-gray-200"
+                }`}
               >
-                <div className="flex items-center gap-2 min-w-0">
-                  <span className="text-xs text-gray-400">{expandedId === practice.id ? "▾" : "▸"}</span>
-                  <span className="text-sm font-medium text-gray-700 truncate">{practice.tag}</span>
-                  <span className="text-xs text-gray-400 flex-shrink-0">{formatTime(practice.duration)}</span>
-                  {practice.aiFeedback && (
-                    <span className="text-xs px-2 py-0.5 bg-green-50 text-green-500 rounded-full flex-shrink-0">
-                      {practice.aiFeedback.score}/10
-                    </span>
-                  )}
-                </div>
-                <button
-                  onClick={(e) => { e.stopPropagation(); handleDeletePractice(practice.id); }}
-                  className="text-gray-300 hover:text-red-400 text-xs cursor-pointer flex-shrink-0"
+                <div
+                  onClick={() => onSelectPractice?.(isSelected ? null : practice.id)}
+                  className="flex items-center justify-between px-4 py-3 cursor-pointer hover:bg-gray-50"
                 >
-                  ✕
-                </button>
-              </div>
-              {expandedId === practice.id && (
-                <div className="px-4 pb-4 flex flex-col gap-3">
-                  <div>
-                    <span className="text-xs font-medium text-gray-500 block mb-1">Transcript</span>
-                    <p className="text-sm text-gray-600 bg-gray-50 rounded-lg p-3 whitespace-pre-wrap">
-                      {practice.transcript}
-                    </p>
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="text-xs text-gray-400">{isSelected ? "▾" : "▸"}</span>
+                    <span className="text-sm font-medium text-gray-700 truncate">{practice.tag}</span>
+                    <span className="text-xs text-gray-400 flex-shrink-0">{formatTime(practice.duration)}</span>
+                    {feedbackText && (
+                      <span className="text-xs px-2 py-0.5 bg-green-50 text-green-500 rounded-full flex-shrink-0">
+                        feedback
+                      </span>
+                    )}
                   </div>
-                  {practice.aiFeedback ? (
-                    <div>
-                      <div className="bg-green-50 rounded-lg p-3 mb-2">
-                        <span className="text-xs font-medium text-green-600 block mb-1">✅ Strengths</span>
-                        {practice.aiFeedback.strengths.map((s, i) => (
-                          <p key={i} className="text-sm text-gray-600 ml-2">• {s}</p>
-                        ))}
-                      </div>
-                      <div className="bg-orange-50 rounded-lg p-3">
-                        <span className="text-xs font-medium text-orange-600 block mb-1">💡 Improvements</span>
-                        {practice.aiFeedback.improvements.map((s, i) => (
-                          <p key={i} className="text-sm text-gray-600 ml-2">• {s}</p>
-                        ))}
-                      </div>
-                    </div>
-                  ) : (
-                    <button
-                      onClick={() => handleRequestFeedback(practice.id)}
-                      disabled={feedbackLoadingId === practice.id}
-                      className="w-full py-2 border border-orange-400 bg-orange-50 rounded-lg text-sm text-orange-500 hover:bg-orange-100 cursor-pointer disabled:opacity-50"
-                    >
-                      {feedbackLoadingId === practice.id ? "Getting feedback…" : "✨ Get AI Feedback"}
-                    </button>
-                  )}
+                  <button
+                    onClick={(e) => { e.stopPropagation(); handleDeletePractice(practice.id); }}
+                    className="text-gray-300 hover:text-red-400 text-xs cursor-pointer flex-shrink-0"
+                  >
+                    ✕
+                  </button>
                 </div>
-              )}
-            </div>
-          ))}
+                {isSelected && (
+                  <div className="px-4 pb-4 flex flex-col gap-3">
+                    <div>
+                      <span className="text-xs font-medium text-gray-500 block mb-1">Transcript</span>
+                      <p className="text-sm text-gray-600 bg-gray-50 rounded-lg p-3 whitespace-pre-wrap">
+                        {practice.transcript}
+                      </p>
+                    </div>
+                    {feedbackText ? (
+                      <div>
+                        <span className="text-xs font-medium text-gray-500 block mb-1">Saved feedback</span>
+                        <div className="bg-gray-50 rounded-lg px-3 py-2">
+                          <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>
+                            {feedbackText}
+                          </ReactMarkdown>
+                        </div>
+                      </div>
+                    ) : (
+                      <p className="text-xs text-gray-300 text-center py-1">
+                        Ask Bloom for feedback in the AI panel →
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
     </div>

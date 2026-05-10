@@ -68,13 +68,25 @@ const QuestionDetailPage = ({
   const [practiceCollapsed, setPracticeCollapsed] = useState(false);
   const [aiCollapsed, setAiCollapsed] = useState(false);
 
-  // Currently expanded/selected answer. Shared between AnswersPanel (which
-  // renders it) and AIAssistantPanel (so "Update selected" knows the target).
-  // Default: first answer if any.
+  // Selection is mutually exclusive across the two columns: at most one of
+  // {answer, practice} is selected at a time. The AI panel uses whichever is
+  // selected to focus its replies and to decide which action buttons to show.
+  // Defaults: first answer if any, no practice.
   const [selectedAnswerId, setSelectedAnswerId] = useState(
     question.answers?.[0]?.id || null
   );
+  const [selectedPracticeId, setSelectedPracticeId] = useState(null);
   const selectedAnswer = question.answers?.find((a) => a.id === selectedAnswerId) || null;
+  const selectedPractice = question.practices?.find((p) => p.id === selectedPracticeId) || null;
+
+  const handleSelectAnswer = (id) => {
+    setSelectedAnswerId(id);
+    if (id) setSelectedPracticeId(null);
+  };
+  const handleSelectPractice = (id) => {
+    setSelectedPracticeId(id);
+    if (id) setSelectedAnswerId(null);
+  };
 
   // Ref for AIAssistantPanel — lets the AI column header trigger refresh + history dropdown.
   const aiPanelRef = useRef(null);
@@ -184,7 +196,7 @@ const QuestionDetailPage = ({
           <AnswersPanel
             question={question}
             selectedAnswerId={selectedAnswerId}
-            onSelectAnswer={setSelectedAnswerId}
+            onSelectAnswer={handleSelectAnswer}
             onUpdateAnswers={onUpdateAnswers}
             onAddAnswer={onAddAnswer}
             onUpdateAnswer={onUpdateAnswer}
@@ -200,6 +212,8 @@ const QuestionDetailPage = ({
         >
           <PracticePanel
             question={question}
+            selectedPracticeId={selectedPracticeId}
+            onSelectPractice={handleSelectPractice}
             onUpdatePractices={onUpdatePractices}
             onAddPractice={onAddPractice}
             onAddAnswer={onAddAnswer}
@@ -235,7 +249,12 @@ const QuestionDetailPage = ({
             ref={aiPanelRef}
             question={question}
             selectedAnswer={selectedAnswer}
-            onClearSelection={() => setSelectedAnswerId(null)}
+            selectedPractice={selectedPractice}
+            onClearSelection={() => {
+              setSelectedAnswerId(null);
+              setSelectedPracticeId(null);
+            }}
+            onUpdatePractices={onUpdatePractices}
             onAddAnswer={onAddAnswer}
             onUpdateAnswer={onUpdateAnswer}
           />

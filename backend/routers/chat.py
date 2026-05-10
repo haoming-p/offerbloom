@@ -33,6 +33,11 @@ class ChatRequest(BaseModel):
     file_id: Optional[str] = None
     question_id: Optional[str] = None  # used by RAG to retrieve saved answers/practices/linked files
     session_id: Optional[str] = None  # if set, this chat turn is appended to the session's :Message log
+    # When set, RAG marks that specific answer/practice as the focus so the model
+    # knows which item "this answer" / "this practice" refers to. Mutually
+    # exclusive on the frontend, but the backend tolerates both being set.
+    selected_answer_id: Optional[str] = None
+    selected_practice_id: Optional[str] = None
     history: list[ChatMessage] = []
 
 
@@ -250,7 +255,13 @@ def chat(
     # ---------------------------------------------------------------------
     if body.question_id:
         try:
-            rag_block = build_rag_context(db, user_id, body.question_id)
+            rag_block = build_rag_context(
+                db,
+                user_id,
+                body.question_id,
+                selected_answer_id=body.selected_answer_id,
+                selected_practice_id=body.selected_practice_id,
+            )
             if rag_block:
                 system += "\n\n" + rag_block
         except Exception as e:
