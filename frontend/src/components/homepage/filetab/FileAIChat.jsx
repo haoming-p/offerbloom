@@ -2,16 +2,7 @@ import React, { useState, useRef, useEffect } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { sendChatMessage } from "../../../services/chat";
-import bloomLogo from "../../../assets/bloom.png";
-
-const BloomAvatar = ({ size = 32 }) => (
-  <img
-    src={bloomLogo}
-    alt="Bloom"
-    style={{ width: size, height: size }}
-    className="rounded-full object-cover ring-2 ring-orange-200 flex-shrink-0"
-  />
-);
+import BloomAvatar from "../../BloomAvatar";
 
 const CopyButton = ({ text }) => {
   const [copied, setCopied] = useState(false);
@@ -66,7 +57,6 @@ const BotMessage = ({ text }) => (
   <div className="flex items-start gap-2.5">
     <BloomAvatar size={32} />
     <div className="max-w-[88%] bg-white border border-gray-100 rounded-2xl rounded-tl-sm shadow-sm px-4 py-3">
-      <div className="text-[11px] font-semibold text-orange-500 mb-1">Bloom</div>
       <div className="prose prose-sm max-w-none">
         <ReactMarkdown
           remarkPlugins={[remarkGfm]}

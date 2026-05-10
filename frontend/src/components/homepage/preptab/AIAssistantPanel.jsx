@@ -1,25 +1,31 @@
-import { useState, useRef, useEffect } from "react";
-import { LuSparkles, LuRotateCw, LuHistory } from "react-icons/lu";
+import { useState, useRef, useEffect, useImperativeHandle, forwardRef } from "react";
+import { LuSparkles, LuX } from "react-icons/lu";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import { marked } from "marked";
 import { sendChatMessage } from "../../../services/chat";
 import {
   listChatSessions,
   createChatSession,
   getSessionMessages,
 } from "../../../services/chatSessions";
+import { defaultAnswerLabel } from "../../../utils/timestamps";
+import BloomAvatar from "../../BloomAvatar";
 
-// Static greeting shown when a fresh session has no messages yet.
-const GREETING = {
+// Greeting shown on a fresh session before any real reply.
+const greeting = () => ({
   sender: "bot",
-  text: "I can help draft an answer using your saved answers, practice attempts, and any files you've linked to this role or position. What would you like to work on?",
-};
+  text:
+    "Hi, I'm Bloom 🐱✨\n\nDraft a new answer, or pick a saved one and I'll build on it.",
+  isGreeting: true,
+});
 
-// Convert backend Message ({role, content}) → UI message ({sender, text}).
+// Backend Message ({role, content}) → UI message ({sender, text}).
 const fromApi = (m) => ({
   sender: m.role === "user" ? "user" : "bot",
   text: m.content,
 });
 
-// Quick display of "2h ago" / "yesterday" / "Mar 5".
 const formatTimeAgo = (ms) => {
   const diff = Date.now() - ms;
   const mins = Math.floor(diff / 60000);
@@ -34,21 +40,42 @@ const formatTimeAgo = (ms) => {
 
 const HISTORY_PAGE = 10;
 
-const AIAssistantPanel = ({ question }) => {
-  const [chatMessages, setChatMessages] = useState([GREETING]);
+// Tailwind classes for the markdown renderer inside bot bubbles.
+const mdComponents = {
+  h1: (p) => <h1 className="text-base font-bold text-gray-800 mt-3 mb-1.5" {...p} />,
+  h2: (p) => <h2 className="text-sm font-bold text-gray-800 mt-3 mb-1.5" {...p} />,
+  h3: (p) => <h3 className="text-sm font-semibold text-gray-700 mt-2 mb-1" {...p} />,
+  p: (p) => <p className="text-sm text-gray-700 leading-relaxed my-1.5" {...p} />,
+  strong: (p) => <strong className="font-semibold text-gray-900" {...p} />,
+  em: (p) => <em className="italic text-gray-700" {...p} />,
+  ul: (p) => <ul className="list-disc pl-5 my-1.5 space-y-1 text-sm text-gray-700" {...p} />,
+  ol: (p) => <ol className="list-decimal pl-5 my-1.5 space-y-1 text-sm text-gray-700" {...p} />,
+  li: (p) => <li className="leading-relaxed" {...p} />,
+  hr: () => <hr className="my-3 border-gray-200" />,
+};
+
+const AIAssistantPanel = forwardRef(({
+  question,
+  selectedAnswer,
+  onClearSelection,
+  onAddAnswer,
+  onUpdateAnswer,
+}, ref) => {
+  const [chatMessages, setChatMessages] = useState([greeting()]);
   const [chatInput, setChatInput] = useState("");
   const [chatLoading, setChatLoading] = useState(false);
   const chatBottomRef = useRef(null);
 
-  // Session state for this question
+  // Per-message save indicator: { [messageIndex]: "saved-new" | "saved-update" }
+  const [savedFlags, setSavedFlags] = useState({});
+
   const [sessionId, setSessionId] = useState(null);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [sessions, setSessions] = useState([]);
   const [sessionsOffset, setSessionsOffset] = useState(0);
   const [hasMoreSessions, setHasMoreSessions] = useState(false);
 
-  // On question change: load most-recent session (if any) + its messages.
-  // No session yet → leave sessionId null; we'll lazy-create on first send.
+  // Load most recent session when question changes.
   useEffect(() => {
     if (!question?.id) return;
     let cancelled = false;
@@ -61,14 +88,16 @@ const AIAssistantPanel = ({ question }) => {
           setSessionId(s.id);
           const msgs = await getSessionMessages(s.id);
           if (cancelled) return;
-          setChatMessages(msgs.length ? msgs.map(fromApi) : [GREETING]);
+          setChatMessages(msgs.length ? msgs.map(fromApi) : [greeting()]);
         } else {
           setSessionId(null);
-          setChatMessages([GREETING]);
+          setChatMessages([greeting()]);
         }
+        setSavedFlags({});
       } catch {
         setSessionId(null);
-        setChatMessages([GREETING]);
+        setChatMessages([greeting()]);
+        setSavedFlags({});
       }
     })();
     return () => {
@@ -80,7 +109,6 @@ const AIAssistantPanel = ({ question }) => {
     chatBottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [chatMessages]);
 
-  // History dropdown loader (paginated by 10; scroll for more).
   const loadHistoryPage = async (offset) => {
     if (!question?.id) return;
     const page = await listChatSessions(question.id, {
@@ -97,55 +125,59 @@ const AIAssistantPanel = ({ question }) => {
     await loadHistoryPage(0);
   };
 
-  // Refresh = start a brand-new session. Previous session stays in history.
+  // Expose openHistory + refresh to the parent (Column header buttons live there now).
+  useImperativeHandle(ref, () => ({
+    openHistory,
+    refresh: () => handleRefresh(),
+  }));
+
   const handleRefresh = async () => {
     if (!question?.id || chatLoading) return;
     try {
       const s = await createChatSession(question.id);
       setSessionId(s.id);
-      setChatMessages([GREETING]);
+      setChatMessages([greeting()]);
+      setSavedFlags({});
     } catch {
-      // Network blip: still let user start over locally; we'll create on send.
       setSessionId(null);
-      setChatMessages([GREETING]);
+      setChatMessages([greeting()]);
+      setSavedFlags({});
     }
   };
 
-  // Pick a session from history and load its messages.
   const handlePickSession = async (s) => {
     setHistoryOpen(false);
     setSessionId(s.id);
     try {
       const msgs = await getSessionMessages(s.id);
-      setChatMessages(msgs.length ? msgs.map(fromApi) : [GREETING]);
+      setChatMessages(msgs.length ? msgs.map(fromApi) : [greeting()]);
+      setSavedFlags({});
     } catch {
-      setChatMessages([GREETING]);
+      setChatMessages([greeting()]);
+      setSavedFlags({});
     }
   };
 
-  const handleChatSend = async () => {
-    const text = chatInput.trim();
-    if (!text || chatLoading || !question?.id) return;
+  // Send a chat message (either user-typed or button-triggered).
+  const sendMessage = async (text) => {
+    const trimmed = text.trim();
+    if (!trimmed || chatLoading || !question?.id) return;
 
-    // If there's no session yet (first message on this question), create one now.
     let activeSessionId = sessionId;
     if (!activeSessionId) {
       try {
         const s = await createChatSession(question.id);
         activeSessionId = s.id;
         setSessionId(s.id);
-      } catch {
-        // Persistence will silently fail on the backend if id is missing; chat still works.
-      }
+      } catch {}
     }
 
-    const updated = [...chatMessages, { sender: "user", text }];
+    const updated = [...chatMessages, { sender: "user", text: trimmed }];
     setChatMessages(updated);
-    setChatInput("");
     setChatLoading(true);
     try {
       const reply = await sendChatMessage({
-        message: text,
+        message: trimmed,
         context: "answer_draft",
         contextData: `Interview question: "${question?.question || ""}"`,
         questionId: question?.id || null,
@@ -154,37 +186,60 @@ const AIAssistantPanel = ({ question }) => {
       });
       setChatMessages([...updated, { sender: "bot", text: reply }]);
     } catch {
-      setChatMessages([...updated, { sender: "bot", text: "Sorry, couldn't connect. Try again." }]);
+      setChatMessages([
+        ...updated,
+        { sender: "bot", text: "Sorry, couldn't connect. Try again." },
+      ]);
     } finally {
       setChatLoading(false);
     }
   };
 
+  const handleChatSend = async () => {
+    const text = chatInput;
+    setChatInput("");
+    await sendMessage(text);
+  };
+
+  // Convert markdown → HTML for TipTap-friendly storage in Answer.content.
+  const mdToHtml = (md) => {
+    try {
+      return marked.parse(md || "", { gfm: true, breaks: false }).trim();
+    } catch {
+      return `<p>${(md || "").replace(/</g, "&lt;")}</p>`;
+    }
+  };
+
+  const handleSaveAsNew = async (msgIndex, text) => {
+    if (!onAddAnswer) return;
+    const html = mdToHtml(text);
+    const label = `AI draft ${defaultAnswerLabel((question.answers?.length || 0) + 1).replace(/^Version /, "")}`;
+    try {
+      await onAddAnswer(label, html);
+      setSavedFlags((p) => ({ ...p, [msgIndex]: "saved-new" }));
+      setTimeout(() => setSavedFlags((p) => {
+        const next = { ...p }; delete next[msgIndex]; return next;
+      }), 2000);
+    } catch {}
+  };
+
+  const handleUpdateSelected = async (msgIndex, text) => {
+    if (!onUpdateAnswer || !selectedAnswer) return;
+    const html = mdToHtml(text);
+    try {
+      await onUpdateAnswer(selectedAnswer.id, selectedAnswer.label, html);
+      setSavedFlags((p) => ({ ...p, [msgIndex]: "saved-update" }));
+      setTimeout(() => setSavedFlags((p) => {
+        const next = { ...p }; delete next[msgIndex]; return next;
+      }), 2000);
+    } catch {}
+  };
+
   return (
     <div className="flex flex-col h-full bg-gray-50 relative">
-      {/* Header: refresh + history */}
-      <div className="flex items-center justify-end gap-1 px-3 py-2 border-b border-gray-100 bg-white">
-        <button
-          onClick={openHistory}
-          disabled={!question?.id}
-          title="Session history"
-          className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded cursor-pointer disabled:opacity-40"
-        >
-          <LuHistory size={15} />
-        </button>
-        <button
-          onClick={handleRefresh}
-          disabled={!question?.id || chatLoading}
-          title="Start a new session"
-          className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded cursor-pointer disabled:opacity-40"
-        >
-          <LuRotateCw size={15} />
-        </button>
-      </div>
-
-      {/* History panel (overlay-style dropdown) */}
+      {/* History dropdown — rendered as overlay; trigger lives in the column header now. */}
       {historyOpen && (
-        <div className="absolute top-10 right-3 w-72 max-h-80 overflow-y-auto bg-white border border-gray-200 rounded-lg shadow-lg z-10 show-scrollbar">
+        <div className="absolute top-2 right-3 w-72 max-h-80 overflow-y-auto bg-white border border-gray-200 rounded-lg shadow-lg z-10 show-scrollbar">
           <div className="flex items-center justify-between px-3 py-2 border-b border-gray-100">
             <span className="text-xs font-semibold text-gray-600">Past sessions</span>
             <button
@@ -227,27 +282,93 @@ const AIAssistantPanel = ({ question }) => {
         </div>
       )}
 
+      {/* Selected-answer banner — shows which answer "Update selected" will hit */}
+      {selectedAnswer && (
+        <div className="flex items-center justify-between px-4 py-1.5 bg-orange-50 border-b border-orange-100 text-xs text-orange-700">
+          <span className="truncate">
+            Editing: <span className="font-semibold">{selectedAnswer.label}</span>
+          </span>
+          <button
+            onClick={onClearSelection}
+            title="Deselect"
+            className="text-orange-400 hover:text-orange-600 cursor-pointer flex-shrink-0 ml-2"
+          >
+            <LuX size={12} />
+          </button>
+        </div>
+      )}
+
       {/* Messages */}
       <div className="flex-1 overflow-y-auto px-5 py-4 flex flex-col gap-3 show-scrollbar">
-        {chatMessages.map((msg, i) => (
-          <div
-            key={i}
-            className={`flex ${msg.sender === "user" ? "justify-end" : "justify-start"}`}
-          >
-            <div
-              className={`max-w-[85%] px-4 py-2.5 rounded-xl text-sm whitespace-pre-wrap ${
-                msg.sender === "user"
-                  ? "bg-orange-400 text-white rounded-br-none"
-                  : "bg-white text-gray-700 rounded-bl-none border border-gray-100"
-              }`}
-            >
-              {msg.text}
+        {chatMessages.map((msg, i) => {
+          const isBot = msg.sender === "bot";
+          const showActions = isBot && !msg.isGreeting;
+          const flag = savedFlags[i];
+          if (!isBot) {
+            return (
+              <div key={i} className="flex justify-end">
+                <div className="max-w-[85%] px-4 py-2.5 rounded-2xl rounded-br-sm bg-orange-400 text-white text-sm whitespace-pre-wrap">
+                  {msg.text}
+                </div>
+              </div>
+            );
+          }
+          return (
+            <div key={i} className="flex items-start gap-2.5">
+              <BloomAvatar size={32} />
+              <div className="max-w-[88%] bg-white border border-gray-100 rounded-2xl rounded-tl-sm shadow-sm">
+                <div className="px-4 pt-3 pb-1">
+                  <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>
+                    {msg.text}
+                  </ReactMarkdown>
+                </div>
+                {showActions && (
+                  <div className="flex flex-wrap gap-1.5 px-3 pb-3 pt-1 border-t border-gray-50 mt-1">
+                    <button
+                      onClick={() => handleSaveAsNew(i, msg.text)}
+                      className="text-[11px] px-2.5 py-1 rounded border border-orange-300 bg-orange-50 text-orange-600 hover:bg-orange-100 cursor-pointer"
+                    >
+                      {flag === "saved-new" ? "✓ Saved" : "Save as new answer"}
+                    </button>
+                    {selectedAnswer && (
+                      <button
+                        onClick={() => handleUpdateSelected(i, msg.text)}
+                        className="text-[11px] px-2.5 py-1 rounded border border-orange-300 bg-orange-50 text-orange-600 hover:bg-orange-100 cursor-pointer"
+                        title={`Overwrite ${selectedAnswer.label}`}
+                      >
+                        {flag === "saved-update" ? "✓ Updated" : "Update selected"}
+                      </button>
+                    )}
+                    <button
+                      onClick={() =>
+                        sendMessage("What are likely follow-up questions for this answer?")
+                      }
+                      disabled={chatLoading}
+                      className="text-[11px] px-2.5 py-1 rounded border border-gray-200 bg-white text-gray-500 hover:bg-gray-50 cursor-pointer disabled:opacity-50"
+                    >
+                      Likely follow-ups
+                    </button>
+                    <button
+                      onClick={() =>
+                        sendMessage(
+                          "What recommendations do you have to improve this answer? If none stand out, say so."
+                        )
+                      }
+                      disabled={chatLoading}
+                      className="text-[11px] px-2.5 py-1 rounded border border-gray-200 bg-white text-gray-500 hover:bg-gray-50 cursor-pointer disabled:opacity-50"
+                    >
+                      Recommendations
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
         {chatLoading && (
-          <div className="flex justify-start">
-            <div className="bg-white px-4 py-2.5 rounded-xl text-sm text-gray-400 rounded-bl-none border border-gray-100">
+          <div className="flex items-start gap-2.5">
+            <BloomAvatar size={32} />
+            <div className="bg-white px-4 py-2.5 rounded-2xl rounded-tl-sm text-sm text-gray-400 border border-gray-100 shadow-sm">
               typing…
             </div>
           </div>
@@ -276,9 +397,10 @@ const AIAssistantPanel = ({ question }) => {
       </div>
     </div>
   );
-};
+});
 
-AIAssistantPanel.title = "AI Assistant";
+AIAssistantPanel.displayName = "AIAssistantPanel";
+AIAssistantPanel.title = "Bloom · AI Assistant";
 AIAssistantPanel.Icon = LuSparkles;
 
 export default AIAssistantPanel;

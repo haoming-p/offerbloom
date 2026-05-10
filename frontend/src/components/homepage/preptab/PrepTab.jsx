@@ -7,17 +7,26 @@ import { fetchQuestions, addQuestion, deleteQuestion, updateQuestion, reorderQue
 import { addAnswer, updateAnswer, deleteAnswer } from "../../../services/answers";
 import { addPractice, deletePractice } from "../../../services/practices";
 
-// Categories match the 8 behavioral buckets seeded in Neo4j (PreloadedQuestion).
-const SHARED_CATEGORIES = [
-  { id: "leadership",          label: "Leadership" },
-  { id: "team_collaboration",  label: "Team Collaboration" },
-  { id: "conflict_resolution", label: "Conflict Resolution" },
-  { id: "adaptability",        label: "Adaptability" },
-  { id: "culture_fit",         label: "Culture Fit" },
-  { id: "motivation",          label: "Motivation" },
-  { id: "work_style",          label: "Work Style" },
-  { id: "career_goals",        label: "Career Goals" },
-];
+// Per-role default categories. Users can edit/add/delete from these defaults
+// in the UI; their saved list (in data.categories) wins on subsequent loads.
+// Roles not in this lookup get no defaults — user can build their own list.
+const DEFAULT_CATEGORIES_BY_ROLE = {
+  pm: [
+    { id: "bq",            label: "BQ" },
+    { id: "product_sense", label: "Product Sense" },
+    { id: "general",       label: "General" },
+  ],
+  sde: [
+    { id: "bq",            label: "BQ" },
+    { id: "algorithm",     label: "Algorithm" },
+    { id: "system_design", label: "System Design" },
+  ],
+  pjm: [
+    { id: "bq",            label: "BQ" },
+  ],
+};
+
+const defaultsForRole = (roleId) => DEFAULT_CATEGORIES_BY_ROLE[roleId] || [];
 
 const makeKey = (roleId, posKey, catId) => `${roleId}-${posKey}-${catId}`;
 
@@ -41,7 +50,7 @@ const PrepTab = ({ data, user, defaultRoleId, onUpdateCategories }) => {
     const initial = {};
     roles.forEach((role) => {
       const saved = savedCategories[role.id];
-      initial[role.id] = Array.isArray(saved) && saved.length ? saved : [...SHARED_CATEGORIES];
+      initial[role.id] = Array.isArray(saved) && saved.length ? saved : defaultsForRole(role.id);
     });
     return initial;
   });
@@ -53,7 +62,7 @@ const PrepTab = ({ data, user, defaultRoleId, onUpdateCategories }) => {
       roles.forEach((role) => {
         if (!next[role.id] || next[role.id].length === 0) {
           const saved = savedCategories[role.id];
-          next[role.id] = Array.isArray(saved) && saved.length ? saved : [...SHARED_CATEGORIES];
+          next[role.id] = Array.isArray(saved) && saved.length ? saved : defaultsForRole(role.id);
         }
       });
       return next;

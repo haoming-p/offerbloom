@@ -1,12 +1,13 @@
-import { useState } from "react";
-import { LuChevronLeft, LuChevronRight, LuPencil, LuPanelLeftClose, LuPanelLeftOpen } from "react-icons/lu";
+import { useState, useRef } from "react";
+import { LuChevronLeft, LuChevronRight, LuPencil, LuPanelLeftClose, LuPanelLeftOpen, LuRotateCw, LuHistory } from "react-icons/lu";
 import AnswersPanel from "./AnswersPanel";
 import PracticePanel from "./PracticePanel";
 import AIAssistantPanel from "./AIAssistantPanel";
 import { updateQuestion as updateQuestionApi } from "../../../services/questions";
 
-// Reusable column wrapper: header (title + collapse button), body slot, collapsed strip.
-const Column = ({ title, Icon, collapsed, onToggle, children, expandedClass = "flex-1" }) => {
+// Reusable column wrapper: header (title + optional extra actions + collapse button),
+// body slot, collapsed strip. extraActions render between the title and the collapse btn.
+const Column = ({ title, Icon, collapsed, onToggle, children, expandedClass = "flex-1", extraActions = null }) => {
   if (collapsed) {
     return (
       <button
@@ -28,13 +29,16 @@ const Column = ({ title, Icon, collapsed, onToggle, children, expandedClass = "f
           <Icon size={14} className="text-gray-500" />
           {title}
         </div>
-        <button
-          onClick={onToggle}
-          className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded cursor-pointer"
-          title={`Minimize ${title}`}
-        >
-          <LuPanelLeftClose size={14} />
-        </button>
+        <div className="flex items-center gap-1">
+          {extraActions}
+          <button
+            onClick={onToggle}
+            className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded cursor-pointer"
+            title={`Minimize ${title}`}
+          >
+            <LuPanelLeftClose size={14} />
+          </button>
+        </div>
       </div>
       <div className="flex-1 min-h-0">{children}</div>
     </div>
@@ -63,6 +67,17 @@ const QuestionDetailPage = ({
   const [answersCollapsed, setAnswersCollapsed] = useState(false);
   const [practiceCollapsed, setPracticeCollapsed] = useState(false);
   const [aiCollapsed, setAiCollapsed] = useState(false);
+
+  // Currently expanded/selected answer. Shared between AnswersPanel (which
+  // renders it) and AIAssistantPanel (so "Update selected" knows the target).
+  // Default: first answer if any.
+  const [selectedAnswerId, setSelectedAnswerId] = useState(
+    question.answers?.[0]?.id || null
+  );
+  const selectedAnswer = question.answers?.find((a) => a.id === selectedAnswerId) || null;
+
+  // Ref for AIAssistantPanel — lets the AI column header trigger refresh + history dropdown.
+  const aiPanelRef = useRef(null);
 
   // Inline question editing
   const [editingQuestion, setEditingQuestion] = useState(false);
@@ -168,6 +183,8 @@ const QuestionDetailPage = ({
         >
           <AnswersPanel
             question={question}
+            selectedAnswerId={selectedAnswerId}
+            onSelectAnswer={setSelectedAnswerId}
             onUpdateAnswers={onUpdateAnswers}
             onAddAnswer={onAddAnswer}
             onUpdateAnswer={onUpdateAnswer}
@@ -195,8 +212,33 @@ const QuestionDetailPage = ({
           Icon={AIAssistantPanel.Icon}
           collapsed={aiCollapsed}
           onToggle={() => setAiCollapsed((v) => !v)}
+          extraActions={
+            <>
+              <button
+                onClick={() => aiPanelRef.current?.openHistory()}
+                title="Session history"
+                className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded cursor-pointer"
+              >
+                <LuHistory size={13} />
+              </button>
+              <button
+                onClick={() => aiPanelRef.current?.refresh()}
+                title="Start a new session"
+                className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded cursor-pointer"
+              >
+                <LuRotateCw size={13} />
+              </button>
+            </>
+          }
         >
-          <AIAssistantPanel question={question} />
+          <AIAssistantPanel
+            ref={aiPanelRef}
+            question={question}
+            selectedAnswer={selectedAnswer}
+            onClearSelection={() => setSelectedAnswerId(null)}
+            onAddAnswer={onAddAnswer}
+            onUpdateAnswer={onUpdateAnswer}
+          />
         </Column>
       </div>
     </div>
