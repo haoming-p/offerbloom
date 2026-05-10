@@ -33,6 +33,21 @@ export async function addQuestion(roleId, categoryId, positionKey = "general", t
   return data;
 }
 
+export async function updateQuestion(questionId, text) {
+  const token = getToken();
+  const res = await fetch(`${API_URL}/questions/${questionId}`, {
+    method: "PUT",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ text }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.detail || "Failed to update question");
+  return data;
+}
+
 export async function deleteQuestion(questionId) {
   const token = getToken();
   const res = await fetch(`${API_URL}/questions/${questionId}`, {

@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useRef } from "react";
-import { LuSearch } from "react-icons/lu";
+import { LuSearch, LuPencil } from "react-icons/lu";
 import {
   useReactTable,
   getCoreRowModel,
@@ -24,9 +24,10 @@ import { CSS } from "@dnd-kit/utilities";
 const columnHelper = createColumnHelper();
 
 // ============================================================
-// Draggable Row
+// Draggable Row — whole row clickable to open detail.
+// Drag handle and delete cell stop propagation so they don't trigger row click.
 // ============================================================
-const DraggableRow = ({ row, onDelete }) => {
+const DraggableRow = ({ row, onDelete, onOpenDetail }) => {
   const {
     attributes,
     listeners,
@@ -46,9 +47,10 @@ const DraggableRow = ({ row, onDelete }) => {
     <tr
       ref={setNodeRef}
       style={style}
-      className="border-b border-gray-100 hover:bg-gray-50"
+      onClick={() => onOpenDetail?.(row.original.id)}
+      className="border-b border-gray-100 hover:bg-gray-50 cursor-pointer"
     >
-      <td className="w-10 px-2 py-3 text-center">
+      <td className="w-10 px-2 py-3 text-center" onClick={(e) => e.stopPropagation()}>
         <span
           {...attributes}
           {...listeners}
@@ -62,7 +64,7 @@ const DraggableRow = ({ row, onDelete }) => {
           {flexRender(cell.column.columnDef.cell, cell.getContext())}
         </td>
       ))}
-      <td className="w-10 px-2 py-3 text-center">
+      <td className="w-10 px-2 py-3 text-center" onClick={(e) => e.stopPropagation()}>
         <button
           onClick={() => onDelete(row.original.id)}
           className="text-gray-300 hover:text-red-400 cursor-pointer text-sm"
@@ -71,139 +73,6 @@ const DraggableRow = ({ row, onDelete }) => {
         </button>
       </td>
     </tr>
-  );
-};
-
-// ============================================================
-// Answer Modal — quick edit
-// ============================================================
-const AnswerModal = ({ question, onClose, onAddAnswer, onDeleteAnswer, onOpenAnswerPage }) => {
-  const [draftLabel, setDraftLabel] = useState("");
-  const [draftContent, setDraftContent] = useState("");
-  const [showForm, setShowForm] = useState(false);
-  const [saving, setSaving] = useState(false);
-
-  const handleAddAnswer = async () => {
-    if (!draftContent.trim()) return;
-    const label = draftLabel.trim() || `Version ${question.answers.length + 1}`;
-    const content = draftContent.trim();
-    setSaving(true);
-    await onAddAnswer(label, content);
-    setSaving(false);
-    setDraftLabel("");
-    setDraftContent("");
-    setShowForm(false);
-  };
-
-  const handleDeleteAnswer = (answerId) => {
-    onDeleteAnswer(answerId);
-  };
-
-  return (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-      <div className="bg-white rounded-2xl p-8 max-w-2xl w-full max-h-[80vh] flex flex-col">
-        <div className="flex items-center justify-between mb-1">
-          <h2 className="text-lg font-bold text-gray-800">
-            {question.question}
-          </h2>
-          <button
-            onClick={onClose}
-            className="text-gray-400 hover:text-gray-600 cursor-pointer text-lg"
-          >
-            ✕
-          </button>
-        </div>
-        <span className="text-xs text-gray-400 mb-6">Quick Edit</span>
-
-        <div className="flex-1 overflow-y-auto show-scrollbar mb-6">
-          {question.answers.length === 0 && !showForm ? (
-            <p className="text-gray-300 text-sm text-center py-4">
-              No answers yet
-            </p>
-          ) : (
-            <div className="flex flex-col gap-4">
-              {question.answers.map((answer) => (
-                <div key={answer.id} className="bg-gray-50 rounded-xl p-4">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-sm font-medium text-gray-700">
-                      {answer.label}
-                    </span>
-                    <button
-                      onClick={() => handleDeleteAnswer(answer.id)}
-                      className="text-gray-300 hover:text-red-400 cursor-pointer text-xs"
-                    >
-                      ✕
-                    </button>
-                  </div>
-                  <p className="text-sm text-gray-600 whitespace-pre-wrap">
-                    {answer.content}
-                  </p>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        <div className="border-t border-gray-100 pt-4">
-          {showForm ? (
-            <>
-              <div className="flex gap-3 mb-3">
-                <input
-                  type="text"
-                  value={draftLabel}
-                  onChange={(e) => setDraftLabel(e.target.value)}
-                  placeholder={`Version ${question.answers.length + 1}`}
-                  className="w-40 border border-gray-200 rounded-lg px-3 py-2 text-sm placeholder-gray-300"
-                />
-                <span className="text-xs text-gray-300 self-center">
-                  Optional label (e.g. "Case - STAR format", "Short version")
-                </span>
-              </div>
-              <textarea
-                value={draftContent}
-                onChange={(e) => setDraftContent(e.target.value)}
-                placeholder="Paste or write your answer here..."
-                rows={4}
-                autoFocus
-                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm placeholder-gray-300 resize-none mb-3"
-              />
-              <div className="flex justify-end gap-3">
-                <button
-                  onClick={() => { setShowForm(false); setDraftLabel(""); setDraftContent(""); }}
-                  className="px-4 py-2 text-gray-400 hover:text-gray-600 text-sm cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleAddAnswer}
-                  disabled={saving}
-                  className="px-5 py-2 bg-orange-400 text-white rounded-lg hover:bg-orange-500 cursor-pointer text-sm disabled:opacity-50"
-                >
-                  {saving ? "Saving…" : "Add Answer"}
-                </button>
-              </div>
-            </>
-          ) : (
-            <div className="flex flex-col gap-3">
-              <button
-                onClick={() => setShowForm(true)}
-                className="w-full py-2.5 border border-gray-200 rounded-lg text-sm text-gray-500
-                  hover:border-gray-300 hover:text-gray-700 cursor-pointer"
-              >
-                Quick Edit — Add {question.answers.length === 0 ? "an answer" : "another version"}
-              </button>
-              <button
-                onClick={() => { onClose(); onOpenAnswerPage(question.id); }}
-                className="w-full py-2.5 border border-orange-400 bg-orange-50 rounded-lg text-sm text-orange-500
-                  hover:bg-orange-100 cursor-pointer"
-              >
-                ✨ AI Draft — Open full editor
-              </button>
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
   );
 };
 
@@ -221,18 +90,41 @@ const PrepTable = ({
   onUpdateQuestions,
   onAddQuestion,
   onDeleteQuestion,
-  onAddAnswer,
-  onDeleteAnswer,
-  onOpenAnswerPage,
-  onOpenPracticePage,
+  onUpdateQuestionText,         // (questionId, newText) => void
+  onOpenDetail,                 // (questionId) => void
   showCategoryTag = false,
   categoryLabelById = {},
   showTagPicker = false,        // when true, add row reveals a tag dropdown after typing (All view)
   availableCategories = [],     // [{ id, label }] for the tag dropdown
 }) => {
+  // Inline question edit
+  const [editingQuestionId, setEditingQuestionId] = useState(null);
+  const [editingQuestionText, setEditingQuestionText] = useState("");
+
+  const startEditQuestion = (q) => {
+    setEditingQuestionId(q.id);
+    setEditingQuestionText(q.question);
+  };
+
+  const saveEditQuestion = () => {
+    const text = editingQuestionText.trim();
+    if (text && editingQuestionId) {
+      const original = questions.find((q) => q.id === editingQuestionId);
+      if (text !== original?.question) {
+        onUpdateQuestionText?.(editingQuestionId, text);
+      }
+    }
+    setEditingQuestionId(null);
+    setEditingQuestionText("");
+  };
+
+  const cancelEditQuestion = () => {
+    setEditingQuestionId(null);
+    setEditingQuestionText("");
+  };
+
   const [newQuestionText, setNewQuestionText] = useState("");
   const [newQuestionTag, setNewQuestionTag] = useState(""); // "" = no tag
-  const [openAnswerModalId, setOpenAnswerModalId] = useState(null);
   const [experienceFilter, setExperienceFilter] = useState("All");
   const [searchQuery, setSearchQuery] = useState("");
   const newQuestionInputRef = useRef(null);
@@ -253,19 +145,46 @@ const PrepTable = ({
     return list;
   }, [questions, experienceFilter, searchQuery]);
 
-  const modalQuestion = filteredQuestions.find((q) => q.id === openAnswerModalId);
-
   const columns = useMemo(
     () => [
       columnHelper.accessor("question", {
         header: "Question",
         cell: (info) => {
-          const difficulty = info.row.original.difficulty;
-          const catId = info.row.original.category_id;
+          const q = info.row.original;
+          const difficulty = q.difficulty;
+          const catId = q.category_id;
           const catLabel = catId ? categoryLabelById[catId] || catId : null;
+          const isEditing = editingQuestionId === q.id;
+
+          if (isEditing) {
+            return (
+              <input
+                type="text"
+                autoFocus
+                value={editingQuestionText}
+                onChange={(e) => setEditingQuestionText(e.target.value)}
+                onClick={(e) => e.stopPropagation()}
+                onBlur={saveEditQuestion}
+                onKeyDown={(e) => {
+                  e.stopPropagation();
+                  if (e.key === "Enter") saveEditQuestion();
+                  if (e.key === "Escape") cancelEditQuestion();
+                }}
+                className="w-full text-sm border border-orange-300 rounded-md px-2 py-1 focus:outline-none"
+              />
+            );
+          }
+
           return (
-            <div className="flex items-start gap-2 flex-wrap">
+            <div className="group flex items-start gap-2 flex-wrap">
               <span className="text-sm text-gray-700">{info.getValue()}</span>
+              <button
+                onClick={(e) => { e.stopPropagation(); startEditQuestion(q); }}
+                className="opacity-0 group-hover:opacity-100 text-gray-300 hover:text-gray-600 cursor-pointer transition-opacity"
+                title="Edit question"
+              >
+                <LuPencil size={11} />
+              </button>
               {difficulty && (
                 <span className={`flex-shrink-0 text-xs px-1.5 py-0.5 rounded-full ${DIFFICULTY_STYLES[difficulty] || "bg-gray-100 text-gray-400"}`}>
                   {difficulty}
@@ -283,50 +202,40 @@ const PrepTable = ({
       columnHelper.accessor("answers", {
         header: "Answers",
         cell: (info) => {
-          const answers = info.getValue();
-          const count = answers.length;
+          const count = info.getValue().length;
           return (
-            <button
-              onClick={() => setOpenAnswerModalId(info.row.original.id)}
-              className={`text-xs px-2 py-0.5 rounded-full cursor-pointer transition-all ${
+            <span
+              className={`text-xs px-2 py-0.5 rounded-full inline-block ${
                 count === 0
-                  ? "bg-gray-100 text-gray-400 hover:bg-gray-200"
-                  : "bg-blue-50 text-blue-500 hover:bg-blue-100"
+                  ? "bg-gray-100 text-gray-400"
+                  : "bg-blue-50 text-blue-500"
               }`}
             >
               {count === 0 ? "0 answers" : `${count} ${count === 1 ? "answer" : "answers"}`}
-            </button>
+            </span>
           );
         },
       }),
-      // TODO: change for further development — wire to real practice/interview mode
-      columnHelper.display({
-        id: "practice",
-        header: "Practice",
+      columnHelper.accessor((row) => row.practices?.length || 0, {
+        id: "practices",
+        header: "Practices",
         cell: (info) => {
-          const hasAnswers = info.row.original.answers.length > 0;
+          const count = info.getValue();
           return (
-            <button
-              onClick={() => {
-                if (hasAnswers) {
-                  onOpenPracticePage(info.row.original.id);
-                } else {
-                  setOpenAnswerModalId(info.row.original.id);
-                }
-              }}
-              className={`text-xs cursor-pointer ${
-                hasAnswers
-                  ? "text-orange-400 hover:text-orange-500"
-                  : "text-gray-400 hover:text-gray-500"
+            <span
+              className={`text-xs px-2 py-0.5 rounded-full inline-block ${
+                count === 0
+                  ? "bg-gray-100 text-gray-400"
+                  : "bg-blue-50 text-blue-500"
               }`}
             >
-              {hasAnswers ? "Practice →" : "Draft Answer"}
-            </button>
+              {count === 0 ? "0 practices" : `${count} ${count === 1 ? "practice" : "practices"}`}
+            </span>
           );
         },
       }),
     ],
-    [onOpenPracticePage]
+    [categoryLabelById, showCategoryTag, editingQuestionId, editingQuestionText]
   );
 
   const table = useReactTable({
@@ -494,7 +403,7 @@ const PrepTable = ({
 
             <tbody>
               {table.getRowModel().rows.map((row) => (
-                <DraggableRow key={row.id} row={row} onDelete={handleDelete} />
+                <DraggableRow key={row.id} row={row} onDelete={handleDelete} onOpenDetail={onOpenDetail} />
               ))}
             </tbody>
           </table>
@@ -508,15 +417,6 @@ const PrepTable = ({
           )}
         </div>
 
-        {modalQuestion && (
-          <AnswerModal
-            question={modalQuestion}
-            onClose={() => setOpenAnswerModalId(null)}
-            onAddAnswer={(label, content) => onAddAnswer(openAnswerModalId, label, content)}
-            onDeleteAnswer={(answerId) => onDeleteAnswer(openAnswerModalId, answerId)}
-            onOpenAnswerPage={onOpenAnswerPage}
-          />
-        )}
       </SortableContext>
     </DndContext>
   );
