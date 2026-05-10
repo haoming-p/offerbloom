@@ -10,6 +10,17 @@ from auth.jwt import decode_token
 router = APIRouter(prefix="/questions", tags=["questions"])
 bearer = HTTPBearer()
 
+# Per-role default category ids. Used by "All" mode to seed every default
+# category at once, so navigating between tabs after that doesn't leave the
+# All view stale relative to per-category caches in the frontend. Keep this
+# in sync with DEFAULT_CATEGORIES_BY_ROLE in frontend/.../PrepTab.jsx.
+DEFAULT_CATEGORIES_BY_ROLE: dict[str, list[str]] = {
+    "pm": ["bq", "product_sense", "general"],
+    "sde": ["bq", "algorithm", "system_design"],
+    "pjm": ["bq"],
+}
+
+
 # Default questions seeded for each role+category combo on first access
 DEFAULT_QUESTIONS: dict[str, list[str]] = {
     "pm-bq": [
@@ -196,7 +207,29 @@ def list_questions(
             )
             records = result.data()
     else:
-        # 'All' mode — every category for this role + position. No seeding.
+        # 'All' mode — every category for this role + position.
+        # On general position only, also seed every default category that's
+        # still empty. Without this, the frontend's 'All' cache can stay stale
+        # relative to a later per-category fetch that triggers seeding.
+        if position_key == "general":
+            for cat in DEFAULT_CATEGORIES_BY_ROLE.get(role_id, []):
+                has_any = db.run(
+                    """
+                    MATCH (u:User {id: $user_id})-[:HAS_QUESTION]->(q:Question {
+                        role_id: $role_id,
+                        category_id: $cat,
+                        position_key: $position_key
+                    })
+                    RETURN q LIMIT 1
+                    """,
+                    user_id=user_id,
+                    role_id=role_id,
+                    cat=cat,
+                    position_key=position_key,
+                ).single()
+                if not has_any:
+                    _seed_defaults(db, user_id, role_id, cat, position_key)
+
         result = db.run(
             """
             MATCH (u:User {id: $user_id})-[:HAS_QUESTION]->(q:Question {

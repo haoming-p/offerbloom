@@ -8,8 +8,14 @@ import anthropic
 
 from config import settings
 from database import get_db
+from pydantic import BaseModel
+
 from models.practice import PracticeOut, PracticeCreate
 from auth.jwt import decode_token
+
+
+class FeedbackMarkdownIn(BaseModel):
+    feedback: str
 
 router = APIRouter(prefix="/practices", tags=["practices"])
 bearer = HTTPBearer()
@@ -147,6 +153,45 @@ def generate_feedback(
         transcript=transcript,
         ai_feedback=feedback,
         created_at=practice["created_at"],
+    )
+
+
+@router.put("/{practice_id}/feedback", response_model=PracticeOut)
+def save_feedback_markdown(
+    practice_id: str,
+    body: FeedbackMarkdownIn,
+    credentials: HTTPAuthorizationCredentials = Depends(bearer),
+    db: Session = Depends(get_db),
+):
+    """Save raw markdown feedback (from a Bloom chat reply) onto a practice.
+
+    Distinct from the PATCH endpoint above, which generates structured JSON via
+    a separate AI call. This one just persists whatever markdown the user clicked
+    "Save feedback to practice" on.
+    """
+    user_id = _get_current_user_id(credentials)
+
+    record = db.run(
+        """
+        MATCH (u:User {id: $user_id})-[:HAS_QUESTION]->(q:Question)-[:HAS_PRACTICE]->(p:Practice {id: $p_id})
+        SET p.ai_feedback = $feedback
+        RETURN p
+        """,
+        user_id=user_id,
+        p_id=practice_id,
+        feedback=body.feedback,
+    ).single()
+    if not record:
+        raise HTTPException(status_code=404, detail="Practice not found")
+
+    p = record["p"]
+    return PracticeOut(
+        id=p["id"],
+        tag=p["tag"],
+        duration=p["duration"],
+        transcript=p["transcript"],
+        ai_feedback=body.feedback,
+        created_at=p["created_at"],
     )
 
 

@@ -25,6 +25,20 @@ export async function requestFeedback(practiceId) {
   return data; // full PracticeOut with ai_feedback populated
 }
 
+// Save raw markdown feedback (from a Bloom chat reply) onto a practice.
+// Separate endpoint from requestFeedback above, which generates structured JSON.
+export async function saveFeedbackMarkdown(practiceId, feedback) {
+  const token = getToken();
+  const res = await fetch(`${API_URL}/practices/${practiceId}/feedback`, {
+    method: "PUT",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ feedback }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.detail || "Failed to save feedback");
+  return data; // full PracticeOut with ai_feedback set to the markdown string
+}
+
 export async function deletePractice(practiceId) {
   const token = getToken();
   const res = await fetch(`${API_URL}/practices/${practiceId}`, {

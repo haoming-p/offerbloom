@@ -4,6 +4,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { marked } from "marked";
 import { sendChatMessage } from "../../../services/chat";
+import { saveFeedbackMarkdown } from "../../../services/practices";
 import {
   listChatSessions,
   createChatSession,
@@ -40,6 +41,29 @@ const formatTimeAgo = (ms) => {
 
 const HISTORY_PAGE = 10;
 
+// If Bloom's reply is short and ends with a question mark, it's almost
+// certainly a clarification ("Which experience should I use?"), so the
+// Save / Follow-ups / Recommendations buttons are useless on it. ~80 words
+// matches the spec in WIP_AI_PANEL.md.
+const isClarification = (text) => {
+  if (!text) return false;
+  const trimmed = text.trim();
+  if (!trimmed.endsWith("?")) return false;
+  return trimmed.split(/\s+/).length < 80;
+};
+
+// Typed phrases the input box treats as command shortcuts (exact match,
+// case-insensitive). Anything not on this list falls through to the AI as a
+// normal message — so users who don't know the shortcuts aren't broken.
+const PHRASE_ACTIONS = {
+  "save as new answer": "save-as-new",
+  "update selected": "update-selected",
+  "refine": "refine",
+  "get feedback": "get-feedback",
+  "likely follow-ups": "follow-ups",
+  "recommendations": "recommendations",
+};
+
 // Tailwind classes for the markdown renderer inside bot bubbles.
 const mdComponents = {
   h1: (p) => <h1 className="text-base font-bold text-gray-800 mt-3 mb-1.5" {...p} />,
@@ -57,10 +81,16 @@ const mdComponents = {
 const AIAssistantPanel = forwardRef(({
   question,
   selectedAnswer,
+  selectedPractice,
   onClearSelection,
   onAddAnswer,
   onUpdateAnswer,
+  onUpdatePractices,
 }, ref) => {
+  // What kind of item is currently selected — drives banner + buttons.
+  // Mutual exclusion is enforced upstream (QuestionDetailPage); we just read it.
+  const selectionKind = selectedAnswer ? "answer" : selectedPractice ? "practice" : "none";
+  const selectionLabel = selectedAnswer?.label || selectedPractice?.tag || "";
   const [chatMessages, setChatMessages] = useState([greeting()]);
   const [chatInput, setChatInput] = useState("");
   const [chatLoading, setChatLoading] = useState(false);
@@ -182,6 +212,8 @@ const AIAssistantPanel = forwardRef(({
         contextData: `Interview question: "${question?.question || ""}"`,
         questionId: question?.id || null,
         sessionId: activeSessionId,
+        selectedAnswerId: selectedAnswer?.id || null,
+        selectedPracticeId: selectedPractice?.id || null,
         history: chatMessages,
       });
       setChatMessages([...updated, { sender: "bot", text: reply }]);
@@ -195,9 +227,61 @@ const AIAssistantPanel = forwardRef(({
     }
   };
 
+  // Run a typed-phrase shortcut against the most recent actionable bot reply.
+  // Returns true if the phrase was handled; false means "fall through and send
+  // this as a normal message to the AI."
+  const tryRunPhraseAction = (action) => {
+    let lastBotIndex = -1;
+    for (let i = chatMessages.length - 1; i >= 0; i--) {
+      const m = chatMessages[i];
+      if (m.sender === "bot" && !m.isGreeting) {
+        lastBotIndex = i;
+        break;
+      }
+    }
+    const lastBot = lastBotIndex >= 0 ? chatMessages[lastBotIndex] : null;
+
+    switch (action) {
+      case "save-as-new":
+        if (!lastBot) return false;
+        handleSaveAsNew(lastBotIndex, lastBot.text);
+        return true;
+      case "update-selected":
+        if (!lastBot || !selectedAnswer) return false;
+        handleUpdateSelected(lastBotIndex, lastBot.text);
+        return true;
+      case "refine":
+        if (!selectedAnswer) return false;
+        sendMessage("Refine the selected answer.");
+        return true;
+      case "get-feedback":
+        if (!selectedPractice) return false;
+        sendMessage("Give feedback on this practice.");
+        return true;
+      case "follow-ups":
+        sendMessage(
+          selectionKind === "practice"
+            ? "What are likely follow-up questions for this practice attempt?"
+            : "What are likely follow-up questions for this answer?"
+        );
+        return true;
+      case "recommendations":
+        sendMessage(
+          selectionKind === "practice"
+            ? "What recommendations do you have to improve this practice attempt? If none stand out, say so."
+            : "What recommendations do you have to improve this answer? If none stand out, say so."
+        );
+        return true;
+      default:
+        return false;
+    }
+  };
+
   const handleChatSend = async () => {
     const text = chatInput;
     setChatInput("");
+    const action = PHRASE_ACTIONS[text.trim().toLowerCase()];
+    if (action && tryRunPhraseAction(action)) return;
     await sendMessage(text);
   };
 
@@ -229,6 +313,25 @@ const AIAssistantPanel = forwardRef(({
     try {
       await onUpdateAnswer(selectedAnswer.id, selectedAnswer.label, html);
       setSavedFlags((p) => ({ ...p, [msgIndex]: "saved-update" }));
+      setTimeout(() => setSavedFlags((p) => {
+        const next = { ...p }; delete next[msgIndex]; return next;
+      }), 2000);
+    } catch {}
+  };
+
+  // Save the bot reply (raw markdown) to the selected Practice as ai_feedback.
+  // Different from handleSaveAsNew: we keep markdown verbatim instead of
+  // converting to TipTap HTML, since the practice card renders it as markdown.
+  const handleSaveFeedbackToPractice = async (msgIndex, text) => {
+    if (!selectedPractice || !onUpdatePractices) return;
+    try {
+      const updated = await saveFeedbackMarkdown(selectedPractice.id, text);
+      onUpdatePractices(
+        (question.practices || []).map((p) =>
+          p.id === selectedPractice.id ? { ...p, aiFeedback: updated.ai_feedback } : p
+        )
+      );
+      setSavedFlags((p) => ({ ...p, [msgIndex]: "saved-feedback" }));
       setTimeout(() => setSavedFlags((p) => {
         const next = { ...p }; delete next[msgIndex]; return next;
       }), 2000);
@@ -282,16 +385,32 @@ const AIAssistantPanel = forwardRef(({
         </div>
       )}
 
-      {/* Selected-answer banner — shows which answer "Update selected" will hit */}
-      {selectedAnswer && (
-        <div className="flex items-center justify-between px-4 py-1.5 bg-orange-50 border-b border-orange-100 text-xs text-orange-700">
-          <span className="truncate">
-            Editing: <span className="font-semibold">{selectedAnswer.label}</span>
+      {/* Selection banner — shows the currently focused item + a primary quick action.
+          "Refine" (for answers) and "Get feedback" (for practices) auto-send a
+          short prompt that the backend resolves against the [FOCUS] item. */}
+      {selectionKind !== "none" && (
+        <div className="flex items-center justify-between gap-2 px-4 py-1.5 bg-orange-50 border-b border-orange-100 text-xs text-orange-700">
+          <span className="truncate flex-1 min-w-0">
+            {selectionKind === "answer" ? "Editing" : "Reviewing"}:{" "}
+            <span className="font-semibold">{selectionLabel}</span>
           </span>
+          <button
+            onClick={() =>
+              sendMessage(
+                selectionKind === "answer"
+                  ? "Refine the selected answer."
+                  : "Give feedback on this practice."
+              )
+            }
+            disabled={chatLoading}
+            className="text-[11px] px-2.5 py-0.5 rounded border border-orange-300 bg-white text-orange-600 hover:bg-orange-100 cursor-pointer disabled:opacity-50 flex-shrink-0"
+          >
+            {selectionKind === "answer" ? "Refine" : "Get feedback"}
+          </button>
           <button
             onClick={onClearSelection}
             title="Deselect"
-            className="text-orange-400 hover:text-orange-600 cursor-pointer flex-shrink-0 ml-2"
+            className="text-orange-400 hover:text-orange-600 cursor-pointer flex-shrink-0"
           >
             <LuX size={12} />
           </button>
@@ -302,7 +421,9 @@ const AIAssistantPanel = forwardRef(({
       <div className="flex-1 overflow-y-auto px-5 py-4 flex flex-col gap-3 show-scrollbar">
         {chatMessages.map((msg, i) => {
           const isBot = msg.sender === "bot";
-          const showActions = isBot && !msg.isGreeting;
+          // Hide all action buttons when the reply is a short clarification
+          // question — buttons would be useless on "Which experience should I use?".
+          const showActions = isBot && !msg.isGreeting && !isClarification(msg.text);
           const flag = savedFlags[i];
           if (!isBot) {
             return (
@@ -324,24 +445,43 @@ const AIAssistantPanel = forwardRef(({
                 </div>
                 {showActions && (
                   <div className="flex flex-wrap gap-1.5 px-3 pb-3 pt-1 border-t border-gray-50 mt-1">
-                    <button
-                      onClick={() => handleSaveAsNew(i, msg.text)}
-                      className="text-[11px] px-2.5 py-1 rounded border border-orange-300 bg-orange-50 text-orange-600 hover:bg-orange-100 cursor-pointer"
-                    >
-                      {flag === "saved-new" ? "✓ Saved" : "Save as new answer"}
-                    </button>
-                    {selectedAnswer && (
+                    {/* Buttons adapt to selection:
+                        - practice → Save feedback to practice + ask buttons
+                        - answer or nothing → Save as new + (optionally) Update + ask buttons */}
+                    {selectionKind === "practice" ? (
                       <button
-                        onClick={() => handleUpdateSelected(i, msg.text)}
+                        onClick={() => handleSaveFeedbackToPractice(i, msg.text)}
                         className="text-[11px] px-2.5 py-1 rounded border border-orange-300 bg-orange-50 text-orange-600 hover:bg-orange-100 cursor-pointer"
-                        title={`Overwrite ${selectedAnswer.label}`}
+                        title={`Save this reply as feedback on ${selectedPractice.tag}`}
                       >
-                        {flag === "saved-update" ? "✓ Updated" : "Update selected"}
+                        {flag === "saved-feedback" ? "✓ Saved" : "Save feedback to practice"}
                       </button>
+                    ) : (
+                      <>
+                        <button
+                          onClick={() => handleSaveAsNew(i, msg.text)}
+                          className="text-[11px] px-2.5 py-1 rounded border border-orange-300 bg-orange-50 text-orange-600 hover:bg-orange-100 cursor-pointer"
+                        >
+                          {flag === "saved-new" ? "✓ Saved" : "Save as new answer"}
+                        </button>
+                        {selectedAnswer && (
+                          <button
+                            onClick={() => handleUpdateSelected(i, msg.text)}
+                            className="text-[11px] px-2.5 py-1 rounded border border-orange-300 bg-orange-50 text-orange-600 hover:bg-orange-100 cursor-pointer"
+                            title={`Overwrite ${selectedAnswer.label}`}
+                          >
+                            {flag === "saved-update" ? "✓ Updated" : "Update selected"}
+                          </button>
+                        )}
+                      </>
                     )}
                     <button
                       onClick={() =>
-                        sendMessage("What are likely follow-up questions for this answer?")
+                        sendMessage(
+                          selectionKind === "practice"
+                            ? "What are likely follow-up questions for this practice attempt?"
+                            : "What are likely follow-up questions for this answer?"
+                        )
                       }
                       disabled={chatLoading}
                       className="text-[11px] px-2.5 py-1 rounded border border-gray-200 bg-white text-gray-500 hover:bg-gray-50 cursor-pointer disabled:opacity-50"
@@ -351,7 +491,9 @@ const AIAssistantPanel = forwardRef(({
                     <button
                       onClick={() =>
                         sendMessage(
-                          "What recommendations do you have to improve this answer? If none stand out, say so."
+                          selectionKind === "practice"
+                            ? "What recommendations do you have to improve this practice attempt? If none stand out, say so."
+                            : "What recommendations do you have to improve this answer? If none stand out, say so."
                         )
                       }
                       disabled={chatLoading}
