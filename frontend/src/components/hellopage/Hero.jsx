@@ -1,6 +1,6 @@
 import Header from "./Header";
 
-const Hero = ({ onSignIn, onSignUp, onTryDemo, onOpenResources }) => {
+const Hero = ({ onSignIn, onSignUp, onTryDemo }) => {
   return (
     <section
       id="hero"
@@ -9,7 +9,6 @@ const Hero = ({ onSignIn, onSignUp, onTryDemo, onOpenResources }) => {
       <Header
         onSignIn={onSignIn}
         onSignUp={onSignUp}
-        onOpenResources={onOpenResources}
       />
 
       <div className="h-full flex items-center pt-20 px-16">

@@ -23,3 +23,30 @@ export async function saveUserData({ roles, positions, statuses, categories }) {
   if (!res.ok) throw new Error(data.detail || "Failed to save user data");
   return data;
 }
+
+// Cascade delete a role — removes role, its positions, child questions
+// (+ answers/practices), preferences scoped to it. Stories tagged to it are
+// re-tagged to '' (preserved). Returns updated UserDataOut.
+export async function deleteRoleCascade(roleId) {
+  const token = getToken();
+  const res = await fetch(`${API_URL}/user-data/roles/${encodeURIComponent(roleId)}`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.detail || "Failed to delete role");
+  return data; // { roles, positions, statuses, categories }
+}
+
+// Cascade delete a single position — removes position + child questions
+// (+ answers/practices). File links to the position are auto-stripped.
+export async function deletePositionCascade(positionId) {
+  const token = getToken();
+  const res = await fetch(`${API_URL}/user-data/positions/${encodeURIComponent(positionId)}`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.detail || "Failed to delete position");
+  return data;
+}

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
+import ConfirmDialog from "../components/ConfirmDialog";
 
 // ============================================================
 // DEFAULT STATUSES — customizable by user
@@ -24,7 +25,8 @@ const CUSTOM_COLORS = [
   { bg: "bg-teal-50", text: "text-teal-600", dot: "bg-teal-400" },
 ];
 
-const PositionsPage = ({ data, onUpdatePositionsData }) => {
+const PositionsPage = ({ data, user, onUpdatePositionsData, onDeleteRole, onDeletePosition }) => {
+  const isDemoGuest = user?.is_demo_guest;
   const [roles, setRoles] = useState(data?.roles || []);
   const [positions, setPositions] = useState(
     (data?.positions || []).map((p) => ({
@@ -179,14 +181,54 @@ const PositionsPage = ({ data, onUpdatePositionsData }) => {
     if (e.key === "Escape") setEditingRoleId(null);
   };
 
+  // `confirmDelete` shape: { type: "role"|"position", id, title, message } or null.
+  // We intercept delete clicks with this state, then commit on confirm.
+  const [confirmDelete, setConfirmDelete] = useState(null);
+
   const handleDeleteRole = (e, roleId) => {
     e.stopPropagation();
-    const newRoles = roles.filter((r) => r.id !== roleId);
-    const newPositions = positions.filter((p) => p.role !== roleId);
-    setRoles(newRoles);
-    setPositions(newPositions);
-    syncToBackend(newRoles, newPositions, statuses);
-    if (activeRoleId === roleId) setActiveRoleId("all");
+    const role = roles.find((r) => r.id === roleId);
+    const posCount = positions.filter((p) => p.role === roleId).length;
+    const posLine = posCount > 0
+      ? `${posCount} ${posCount === 1 ? "position" : "positions"} under this role`
+      : null;
+    setConfirmDelete({
+      type: "role",
+      id: roleId,
+      title: `Delete role "${role?.label || roleId}"?`,
+      message:
+        "This will also delete:" +
+        (posLine ? `\n• ${posLine}` : "") +
+        "\n• All questions, answers, and practices under this role" +
+        "\n• AI preferences scoped to this role" +
+        "\n\nStories tagged to this role will be re-tagged to \"All roles\". Linked files will keep their content." +
+        "\n\nThis cannot be undone.",
+    });
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!confirmDelete) return;
+    try {
+      if (confirmDelete.type === "role") {
+        const roleId = confirmDelete.id;
+        await onDeleteRole?.(roleId);
+        // Mirror App's appData update into our local mirror state, so the
+        // page UI updates without a full reload. App-side appData is the
+        // source of truth; the page's local copies stay derived from it.
+        const newRoles = roles.filter((r) => r.id !== roleId);
+        const newPositions = positions.filter((p) => p.role !== roleId);
+        setRoles(newRoles);
+        setPositions(newPositions);
+        if (activeRoleId === roleId) setActiveRoleId("all");
+      } else if (confirmDelete.type === "position") {
+        await onDeletePosition?.(confirmDelete.id);
+        setPositions(positions.filter((p) => p.id !== confirmDelete.id));
+      }
+    } catch (err) {
+      alert(err.message || "Failed to delete");
+    } finally {
+      setConfirmDelete(null);
+    }
   };
 
   // ============================================================
@@ -289,7 +331,15 @@ const PositionsPage = ({ data, onUpdatePositionsData }) => {
   };
 
   const handleDeletePosition = (posId) => {
-    updatePositions(positions.filter((p) => p.id !== posId));
+    const pos = positions.find((p) => p.id === posId);
+    setConfirmDelete({
+      type: "position",
+      id: posId,
+      title: `Delete "${pos?.title || "this position"}"?`,
+      message:
+        "This will also delete all questions, answers, and practices under this position. " +
+        "Linked files will keep their content.\n\nThis cannot be undone.",
+    });
   };
 
   const handleChangeStatus = (posId, newStatusId) => {
@@ -332,8 +382,20 @@ const PositionsPage = ({ data, onUpdatePositionsData }) => {
 
   return (
     <div className="flex flex-col h-full">
+      {/* Title bar — matches Prep / Library / Me */}
+      <div className="px-8 pt-8 pb-4">
+        <h1 className="text-2xl font-bold text-gray-800 mb-1">
+          {isDemoGuest ? "Explore sample positions" : "My Positions"}
+        </h1>
+        <p className="text-sm text-gray-400">
+          {isDemoGuest
+            ? "Your updates clear in 24h. Save to account to keep them."
+            : "Track the roles you're prepping for and positions under each."}
+        </p>
+      </div>
+
       {/* Fixed header area */}
-      <div className="flex-shrink-0 px-6 pt-6 bg-white">
+      <div className="flex-shrink-0 px-8 pt-5 bg-white border-t border-gray-200">
         {/* Role tabs */}
         <div className="flex gap-2 items-center mb-4 flex-wrap">
           {/* All roles tab */}
@@ -534,7 +596,7 @@ const PositionsPage = ({ data, onUpdatePositionsData }) => {
       </div>
 
       {/* Table area — scrollable */}
-      <div className="flex-1 overflow-y-auto show-scrollbar px-6 py-4">
+      <div className="flex-1 overflow-y-auto show-scrollbar px-8 py-4">
         <table className="w-full">
           <thead>
             <tr className="border-b border-gray-200">
@@ -911,6 +973,14 @@ const PositionsPage = ({ data, onUpdatePositionsData }) => {
           )}
         </div>
       </div>
+
+      <ConfirmDialog
+        open={!!confirmDelete}
+        title={confirmDelete?.title}
+        message={confirmDelete?.message}
+        onConfirm={handleConfirmDelete}
+        onCancel={() => setConfirmDelete(null)}
+      />
     </div>
   );
 };

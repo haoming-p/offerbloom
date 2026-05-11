@@ -1,9 +1,15 @@
 import React, { useState, useRef, useEffect } from "react";
+import { LuSparkles, LuX } from "react-icons/lu";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { sendChatMessage } from "../../services/chat";
 import { createPreference } from "../../services/preferences";
 import BloomAvatar from "../BloomAvatar";
+
+const stripHtml = (html) => {
+  if (!html) return "";
+  return html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+};
 
 const CopyButton = ({ text }) => {
   const [copied, setCopied] = useState(false);
@@ -54,7 +60,7 @@ const markdownComponents = {
   td: (p) => <td className="border border-gray-200 px-2 py-1 align-top" {...p} />,
 };
 
-const BotMessage = ({ text }) => (
+const BotMessage = ({ text, hideActions }) => (
   <div className="flex items-start gap-2.5">
     <BloomAvatar size={32} />
     <div className="max-w-[88%] bg-white border border-gray-100 rounded-2xl rounded-tl-sm shadow-sm px-4 py-3">
@@ -66,9 +72,11 @@ const BotMessage = ({ text }) => (
           {text}
         </ReactMarkdown>
       </div>
-      <div className="mt-2 pt-2 border-t border-gray-100 flex justify-end">
-        <CopyButton text={text} />
-      </div>
+      {!hideActions && (
+        <div className="mt-2 pt-2 border-t border-gray-100 flex justify-end">
+          <CopyButton text={text} />
+        </div>
+      )}
     </div>
   </div>
 );
@@ -97,14 +105,15 @@ const UserMessage = ({ text, remembered, onRemember }) => (
   </div>
 );
 
-const FileAIChat = ({ selectedFile, activeSection }) => {
+const FileAIChat = ({ selectedFile, activeSection, selectedStory, onClearStory }) => {
   const [messages, setMessages] = useState([
     {
       sender: "bot",
       text:
         "Hi, I'm **Bloom**, your lucky cat 🐱✨\n\n" +
-        "Pick a file or content section on the left and I'll review it for you. " +
-        "I give edits as **paste-ready replacements**, not rewritten docs.",
+        "I review your files for paste-ready edits, or refine your stories — both follow your AI preferences.\n\n" +
+        "Pick a file or story on the left to start.",
+      isGreeting: true,
     },
   ]);
   const [input, setInput] = useState("");
@@ -115,11 +124,22 @@ const FileAIChat = ({ selectedFile, activeSection }) => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
+  // Story content is sent inline via contextData (no schema change needed) so
+  // the model can quote/reference it directly. Capped to keep prompts sane.
   const buildContextData = () => {
     if (selectedFile) return `File: ${selectedFile.name} (type: ${selectedFile.file_type || "unknown"})`;
+    if (selectedStory) {
+      const body = stripHtml(selectedStory.content || "").slice(0, 2000);
+      return `Story title: "${selectedStory.title}"\nStory content:\n${body}`;
+    }
     if (activeSection) return `Content section: ${activeSection.label}`;
     return null;
   };
+
+  // file_review's system prompt is tuned for paste-ready resume edits — keep
+  // that for actual files. For story chats use "general" so the assistant
+  // doesn't try to apply the Resume-edit template.
+  const chatContext = selectedFile ? "file_review" : "general";
 
   const handleSend = async (text) => {
     const msg = (text || input).trim();
@@ -131,7 +151,7 @@ const FileAIChat = ({ selectedFile, activeSection }) => {
     try {
       const reply = await sendChatMessage({
         message: msg,
-        context: "file_review",
+        context: chatContext,
         contextData: buildContextData(),
         fileId: selectedFile?.id || null,
         history: messages,
@@ -167,7 +187,13 @@ const FileAIChat = ({ selectedFile, activeSection }) => {
     } catch {}
   };
 
-  const contextName = selectedFile ? selectedFile.name : activeSection ? activeSection.label : null;
+  const contextName = selectedFile
+    ? selectedFile.name
+    : selectedStory
+    ? selectedStory.title
+    : activeSection
+    ? activeSection.label
+    : null;
 
   const quickPrompts = selectedFile
     ? selectedFile.type === "url"
@@ -177,6 +203,12 @@ const FileAIChat = ({ selectedFile, activeSection }) => {
           { label: "Top 5 weak bullets", text: `Find the 5 weakest bullets in ${selectedFile.name} and give paste-ready replacements.` },
           { label: "ATS check", text: `Check ${selectedFile.name} for ATS issues. Give specific lines to fix.` },
         ]
+    : selectedStory
+    ? [
+        { label: "Refine", text: "Refine this story — keep the voice, tighten the language." },
+        { label: "Make shorter", text: "Make this story shorter — keep the key beats only." },
+        { label: "Where else can it apply?", text: "What other interview questions could this story answer?" },
+      ]
     : activeSection
     ? [
         { label: "Improve this section", text: `Suggest paste-ready edits to improve my ${activeSection.label} section.` },
@@ -186,24 +218,43 @@ const FileAIChat = ({ selectedFile, activeSection }) => {
 
   return (
     <div className="flex flex-col h-full bg-gradient-to-b from-orange-50/40 via-white to-white">
-      {/* Header */}
-      <div className="px-5 py-3 border-b border-gray-100 flex items-center gap-3 bg-white">
-        <BloomAvatar size={40} />
-        <div className="leading-tight">
-          <div className="text-sm font-bold text-gray-800">Bloom</div>
-          <div className="text-[11px] text-gray-400">your lucky cat — paste-ready coaching</div>
+      {/* Header — matches the Prep AI column header style. */}
+      <div className="flex items-center justify-between px-4 py-2 border-b border-gray-200 bg-gray-50">
+        <div className="flex items-center gap-2 text-sm text-gray-700">
+          <LuSparkles size={14} className="text-gray-500" />
+          <span>
+            <strong className="font-bold text-gray-800">Bloom</strong>
+            <span className="text-gray-400"> · Library AI</span>
+          </span>
         </div>
       </div>
 
-      {/* Active context badge */}
+      {/* Selection banner — file OR story selected. Files keep the existing
+          orange treatment; stories share it for consistency. */}
       {selectedFile && (
-        <div className="px-5 py-2 bg-orange-50 border-b border-orange-100">
-          <span className="text-xs text-orange-600">
-            📎 Working with: <span className="font-medium">{selectedFile.name}</span>
+        <div className="flex items-center justify-between gap-2 px-4 py-1.5 bg-orange-50 border-b border-orange-100 text-xs text-orange-700">
+          <span className="truncate flex-1 min-w-0">
+            📎 Working with: <span className="font-semibold">{selectedFile.name}</span>
           </span>
         </div>
       )}
-      {activeSection && !selectedFile && (
+      {!selectedFile && selectedStory && (
+        <div className="flex items-center justify-between gap-2 px-4 py-1.5 bg-orange-50 border-b border-orange-100 text-xs text-orange-700">
+          <span className="truncate flex-1 min-w-0">
+            Editing: <span className="font-semibold">{selectedStory.title}</span>
+          </span>
+          {onClearStory && (
+            <button
+              onClick={onClearStory}
+              title="Deselect"
+              className="text-orange-400 hover:text-orange-600 cursor-pointer flex-shrink-0"
+            >
+              <LuX size={12} />
+            </button>
+          )}
+        </div>
+      )}
+      {activeSection && !selectedFile && !selectedStory && (
         <div className="px-5 py-2 bg-purple-50 border-b border-purple-100">
           <span className="text-xs text-purple-600">
             📝 Working with: <span className="font-medium">{activeSection.label}</span>
@@ -222,7 +273,7 @@ const FileAIChat = ({ selectedFile, activeSection }) => {
               onRemember={() => handleRemember(i, msg.text)}
             />
           ) : (
-            <BotMessage key={i} text={msg.text} />
+            <BotMessage key={i} text={msg.text} hideActions={msg.isGreeting} />
           )
         )}
         {loading && (

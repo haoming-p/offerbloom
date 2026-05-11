@@ -2,9 +2,13 @@ import { useState, useEffect } from "react";
 import HelloPage from "./pages/HelloPage";
 import OnboardingPage from "./pages/OnboardingPage";
 import HomePage from "./pages/HomePage";
-import ResourcesPage from "./pages/ResourcesPage";
 import { getToken, getMe, removeToken, saveToken, demoLogin } from "./services/auth";
-import { getUserData, saveUserData } from "./services/user_data";
+import {
+  getUserData,
+  saveUserData,
+  deleteRoleCascade,
+  deletePositionCascade,
+} from "./services/user_data";
 
 function App() {
   const [screen, setScreen] = useState("loading");
@@ -99,6 +103,30 @@ function App() {
     }
   }
 
+  // Cascade delete via dedicated endpoint. Backend handles question/preference
+  // delete + story re-tag; we just refresh appData from the response.
+  async function handleDeleteRole(roleId) {
+    const result = await deleteRoleCascade(roleId);
+    setAppData((prev) => ({
+      ...prev,
+      roles: result.roles,
+      positions: result.positions,
+      statuses: result.statuses,
+      categories: result.categories,
+    }));
+  }
+
+  async function handleDeletePosition(positionId) {
+    const result = await deletePositionCascade(positionId);
+    setAppData((prev) => ({
+      ...prev,
+      roles: result.roles,
+      positions: result.positions,
+      statuses: result.statuses,
+      categories: result.categories,
+    }));
+  }
+
   async function handleUpdateCategories(categoriesByRole) {
     const updated = { ...appData, categories: categoriesByRole };
     setAppData(updated);
@@ -127,16 +155,6 @@ function App() {
       <HelloPage
         onAuthSuccess={handleAuthSuccess}
         onTryDemo={handleTryDemo}
-        onOpenResources={() => setScreen("resources")}
-      />
-    );
-  }
-
-  if (screen === "resources") {
-    return (
-      <ResourcesPage
-        onBack={() => setScreen("hello")}
-        onSignUp={() => setScreen("hello")}
       />
     );
   }
@@ -166,7 +184,8 @@ function App() {
       onLogout={handleLogout}
       onUpdatePositionsData={handleUpdatePositionsData}
       onUpdateCategories={handleUpdateCategories}
-      onOpenResources={() => setScreen("resources")}
+      onDeleteRole={handleDeleteRole}
+      onDeletePosition={handleDeletePosition}
     />
   );
 }
