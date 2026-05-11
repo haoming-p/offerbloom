@@ -21,6 +21,8 @@ class Settings(BaseSettings):
     r2_public_url: str = ""
 
     anthropic_api_key: str = ""
+    # OpenAI Whisper — used by mobile voice-practice transcription.
+    openai_api_key: str = ""
 
     demo_user_email: str = ""
     cleanup_secret: str = ""

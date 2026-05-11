@@ -3,11 +3,12 @@
 
 Covers every label/edge in the current schema:
   :User, :File, :Question, :Answer, :Practice, :Role, :Position,
-  :ChatSession, :Message
+  :ChatSession, :Message, :Preference, :Story
   + LINKED_TO, FOR_ROLE, OWNS, HAS_*, etc.
 
 Files share R2 keys across local/prod, so we only clone metadata.
 ChatSessions + Messages are included so the demo carries chat history.
+Preferences + Stories (added later) are included so AI behavior carries over.
 
 USAGE
 -----
@@ -54,6 +55,12 @@ def read_bundle(s, email):
             OPTIONAL MATCH (cs)-[:HAS_MESSAGE]->(m:Message)
             RETURN cs, collect(DISTINCT m) AS messages
         """),
+        "preferences": fetch(
+            "MATCH (:User {email: $email})-[:HAS_PREFERENCE]->(n:Preference) RETURN n"
+        ),
+        "stories": fetch(
+            "MATCH (:User {email: $email})-[:HAS_STORY]->(n:Story) RETURN n"
+        ),
         "links": fetch("""
             MATCH (:User {email: $email})-[:OWNS]->(f:File)-[:LINKED_TO]->(t)
             WHERE t:Role OR t:Position
@@ -74,7 +81,9 @@ def wipe(s, email):
         OPTIONAL MATCH (u)-[:HAS_POSITION]->(pos:Position)
         OPTIONAL MATCH (u)-[:HAS_CHAT]->(cs:ChatSession)
         OPTIONAL MATCH (cs)-[:HAS_MESSAGE]->(m:Message)
-        DETACH DELETE q, a, p, f, r, pos, cs, m
+        OPTIONAL MATCH (u)-[:HAS_PREFERENCE]->(pref:Preference)
+        OPTIONAL MATCH (u)-[:HAS_STORY]->(st:Story)
+        DETACH DELETE q, a, p, f, r, pos, cs, m, pref, st
     """, email=email)
 
 
@@ -127,6 +136,12 @@ def write_bundle(s, b):
                 cid=cs["id"], props=dict(m),
             )
 
+    # Preferences + Stories — both hang directly off the user.
+    for rec in b["preferences"]:
+        create_owned("HAS_PREFERENCE", "Preference", dict(rec["n"]))
+    for rec in b["stories"]:
+        create_owned("HAS_STORY", "Story", dict(rec["n"]))
+
     # File -> Role/Position links (LINKED_TO). Must run after files and targets exist.
     for link in b["links"]:
         s.run(
@@ -145,7 +160,9 @@ def summary(b):
     return (
         f"files={len(b['files'])}, roles={len(b['roles'])}, positions={len(b['positions'])}, "
         f"questions={len(b['questions'])}, answers={n_ans}, practices={n_prac}, "
-        f"sessions={len(b['sessions'])}, messages={n_msgs}, links={len(b['links'])}"
+        f"sessions={len(b['sessions'])}, messages={n_msgs}, "
+        f"preferences={len(b['preferences'])}, stories={len(b['stories'])}, "
+        f"links={len(b['links'])}"
     )
 
 

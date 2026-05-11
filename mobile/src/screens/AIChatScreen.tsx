@@ -1,428 +1,272 @@
+import React, { useState, useRef, useEffect } from "react";
 import {
-  View, Text, StyleSheet, TouchableOpacity, TextInput,
-  ScrollView, KeyboardAvoidingView, Platform, Modal
-} from 'react-native';
-import { useState, useRef, useEffect } from 'react';
-import { ChevronLeft, Bot, Send, Check, Copy } from 'lucide-react-native';
-import { useChat, Message } from '../context/ChatContext';
+  View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView,
+  KeyboardAvoidingView, Platform, ActivityIndicator,
+} from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { ChevronLeft, Send, Mic, Square, Sparkles } from "lucide-react-native";
+import { useNavigation, useRoute } from "@react-navigation/native";
+import { Audio } from "expo-av";
+import { sendChat, ChatMessage } from "../api/chat";
+import { transcribeAudio } from "../api/practices";
+import { colors, spacing, fontSize, fontWeight, radius } from "../theme";
 
-// mock response
-function getMockResponse(userMessage: string): string {
-  const msg = userMessage.toLowerCase();
-  if (msg.includes('structure') || msg.includes('star'))
-    return 'Try the STAR method: Situation, Task, Action, Result. Focus most of your answer on the Actions you took and the Results you achieved — that\'s what interviewers care about most.';
-  if (msg.includes('short') || msg.includes('long') || msg.includes('concise'))
-    return 'A good spoken answer is 1-2 minutes. Cut any background that isn\'t directly relevant. Lead with the result, then explain how you got there.';
-  if (msg.includes('metric') || msg.includes('number') || msg.includes('data'))
-    return 'Adding metrics makes your answer much stronger. Instead of "improved performance", try "reduced load time by 40%" or "increased retention by 15%". Even rough estimates are better than none.';
-  if (msg.includes('improve') || msg.includes('better') || msg.includes('weak'))
-    return 'The weakest part of your answer is the result — it\'s a bit vague. Try to quantify the impact. What changed after you took action? Who benefited, and by how much?';
-  return 'Good point. To strengthen this further, try to be more specific about your personal contribution — what did YOU do specifically, vs what the team did together?';
-}
+const GREETING: ChatMessage = {
+  role: "assistant",
+  content:
+    "Hi, I'm Bloom 🐱✨\n\nAsk me anything about this question — drafting an answer, structuring it, or what to highlight.",
+};
 
-// mock improved answer generator
-function generateImprovedAnswer(originalContent: string): string {
-  return `${originalContent}\n\n[AI-improved version: Added clearer structure using STAR format, quantified the impact, and tightened the language for conciseness.]`;
-}
+// Bloom chat for a specific question. Voice input via mic icon next to send:
+// records audio → Whisper → fills the text field so the user can edit before
+// sending.
+export default function AIChatScreen() {
+  const navigation = useNavigation<any>();
+  const route = useRoute<any>();
+  const questionId: string = route.params?.questionId;
+  const questionText: string = route.params?.questionText || "";
 
-export default function AIChatScreen({ route, navigation }: any) {
-  const { answer, question } = route.params;
-  const { getChatHistory, addMessage, initChat } = useChat();
+  const [messages, setMessages] = useState<ChatMessage[]>([GREETING]);
+  const [input, setInput] = useState("");
+  const [sending, setSending] = useState(false);
+  const [recording, setRecording] = useState(false);
+  const [transcribing, setTranscribing] = useState(false);
+  const [error, setError] = useState("");
 
-  const [inputText, setInputText] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
-  const [saveModalVisible, setSaveModalVisible] = useState(false);
-  const scrollRef = useRef<ScrollView>(null);
+  const recordingRef = useRef<Audio.Recording | null>(null);
+  const scrollRef = useRef<ScrollView | null>(null);
 
-  const messages = getChatHistory(answer.id);
-
-  // initial chat on first entry
   useEffect(() => {
-    initChat(answer.id, {
-      id: 'intro',
-      role: 'assistant',
-      text: `I've read your answer. What would you like to improve? I can help with structure, clarity, metrics, or anything else.`,
-    });
-  }, [answer.id]);
+    // Scroll to bottom whenever messages change.
+    setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 50);
+  }, [messages]);
 
-  async function sendMessage() {
-    if (!inputText.trim() || isLoading) return;
-
-    const userMsg: Message = {
-      id: `user-${Date.now()}`,
-      role: 'user',
-      text: inputText.trim(),
+  useEffect(() => {
+    return () => {
+      if (recordingRef.current) recordingRef.current.stopAndUnloadAsync().catch(() => {});
     };
+  }, []);
 
-    addMessage(answer.id, userMsg);
-    setInputText('');
-    setIsLoading(true);
+  const handleSend = async () => {
+    const trimmed = input.trim();
+    if (!trimmed || sending) return;
 
-    setTimeout(() => {
-      const aiMsg: Message = {
-        id: `ai-${Date.now()}`,
-        role: 'assistant',
-        text: getMockResponse(userMsg.text),
-      };
-      addMessage(answer.id, aiMsg);
-      setIsLoading(false);
-      scrollRef.current?.scrollToEnd({ animated: true });
-    }, 1000);
-  }
+    const userMsg: ChatMessage = { role: "user", content: trimmed };
+    const next = [...messages, userMsg];
+    setMessages(next);
+    setInput("");
+    setSending(true);
+    setError("");
+
+    try {
+      const reply = await sendChat({
+        message: trimmed,
+        context: "answer_draft",
+        contextData: questionText ? `Interview question: "${questionText}"` : null,
+        questionId,
+        history: messages.filter((m) => m !== GREETING || messages.length > 1),
+      });
+      setMessages([...next, { role: "assistant", content: reply }]);
+    } catch (e: any) {
+      setError(e.message || "Bloom couldn't reply. Try again.");
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const startRecording = async () => {
+    setError("");
+    try {
+      const perm = await Audio.requestPermissionsAsync();
+      if (!perm.granted) {
+        setError("Microphone permission denied.");
+        return;
+      }
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: true,
+        playsInSilentModeIOS: true,
+      });
+      const r = new Audio.Recording();
+      await r.prepareToRecordAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
+      await r.startAsync();
+      recordingRef.current = r;
+      setRecording(true);
+    } catch (e: any) {
+      setError(e.message || "Could not start recording.");
+    }
+  };
+
+  const stopRecordingAndTranscribe = async () => {
+    if (!recordingRef.current) return;
+    setRecording(false);
+    setTranscribing(true);
+    try {
+      await recordingRef.current.stopAndUnloadAsync();
+      const uri = recordingRef.current.getURI();
+      recordingRef.current = null;
+      if (!uri) throw new Error("No audio captured.");
+      const text = await transcribeAudio(uri);
+      // Append to current input — lets user keep typing after dictation.
+      setInput((prev) => (prev ? `${prev} ${text}` : text));
+    } catch (e: any) {
+      setError(e.message || "Transcription failed.");
+    } finally {
+      setTranscribing(false);
+    }
+  };
 
   return (
-    <View style={styles.container}>
-
-      {/* Header */}
+    <SafeAreaView style={styles.safe} edges={["top", "left", "right"]}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-          <ChevronLeft size={24} color="#1C3A2A" />
+        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
+          <ChevronLeft size={20} color={colors.textMuted} />
+          <Text style={styles.backText}>Back</Text>
         </TouchableOpacity>
-
-        <View style={styles.botIconContainer}>
-          <Bot size={22} color="#1C3A2A" />
+        <View style={styles.headerTitle}>
+          <Sparkles size={14} color={colors.textMuted} />
+          <Text style={styles.headerTitleText}>
+            <Text style={styles.bloom}>Bloom</Text>
+            <Text style={styles.headerTitleTextMuted}> · Prep AI</Text>
+          </Text>
         </View>
-
-        {/* Save button */}
-        <TouchableOpacity
-          style={styles.saveBtn}
-          onPress={() => setSaveModalVisible(true)}
-        >
-          <Text style={styles.saveBtnText}>Save</Text>
-        </TouchableOpacity>
+        <View style={{ width: 60 }} />
       </View>
 
-      {/* preview answer */}
-      <View style={styles.answerPreview}>
-        <Text style={styles.answerPreviewTitle} numberOfLines={1}>{answer.title}</Text>
-        <Text style={styles.answerPreviewText} numberOfLines={2}>{answer.content}</Text>
-      </View>
-
-      {/* message list */}
-      <ScrollView
-        ref={scrollRef}
-        style={styles.messageList}
-        contentContainerStyle={styles.messageListContent}
-        showsVerticalScrollIndicator={false}
-        onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: true })}
+      <KeyboardAvoidingView
+        style={styles.flex}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0}
       >
-        {messages.map(msg => (
-          <View
-            key={msg.id}
-            style={[styles.messageRow, msg.role === 'user' && styles.messageRowUser]}
-          >
-            {msg.role === 'assistant' && (
-              <View style={styles.aiAvatar}>
-                <Bot size={14} color="#FFFFFF" />
-              </View>
-            )}
-            <View style={[
-              styles.bubble,
-              msg.role === 'user' ? styles.bubbleUser : styles.bubbleAI,
-            ]}>
-              <Text style={[
-                styles.bubbleText,
-                msg.role === 'user' ? styles.bubbleTextUser : styles.bubbleTextAI,
-              ]}>
-                {msg.text}
+        <ScrollView ref={scrollRef} contentContainerStyle={styles.messages}>
+          {messages.map((m, i) => (
+            <View
+              key={i}
+              style={[styles.bubble, m.role === "user" ? styles.userBubble : styles.botBubble]}
+            >
+              <Text style={[styles.bubbleText, m.role === "user" && styles.userText]}>
+                {m.content}
               </Text>
             </View>
-          </View>
-        ))}
-
-        {isLoading && (
-          <View style={styles.messageRow}>
-            <View style={styles.aiAvatar}>
-              <Bot size={14} color="#FFFFFF" />
+          ))}
+          {sending && (
+            <View style={[styles.bubble, styles.botBubble]}>
+              <ActivityIndicator color={colors.orange} />
             </View>
-            <View style={styles.loadingBubble}>
-              <Text style={styles.loadingDots}>●  ●  ●</Text>
-            </View>
-          </View>
-        )}
-      </ScrollView>
+          )}
+          {!!error && <Text style={styles.error}>{error}</Text>}
+        </ScrollView>
 
-      {/* input bar */}
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        keyboardVerticalOffset={0}
-      >
-        <View style={styles.inputBar}>
+        <View style={styles.inputRow}>
+          {recording ? (
+            <TouchableOpacity style={styles.micButtonActive} onPress={stopRecordingAndTranscribe}>
+              <Square size={16} color="white" fill="white" />
+            </TouchableOpacity>
+          ) : transcribing ? (
+            <View style={styles.micButton}>
+              <ActivityIndicator color={colors.orange} size="small" />
+            </View>
+          ) : (
+            <TouchableOpacity style={styles.micButton} onPress={startRecording} disabled={sending}>
+              <Mic size={18} color={colors.textMuted} />
+            </TouchableOpacity>
+          )}
+
           <TextInput
             style={styles.input}
-            placeholder="Ask about your answer..."
-            placeholderTextColor="#B0B8B4"
-            value={inputText}
-            onChangeText={setInputText}
+            value={input}
+            onChangeText={setInput}
+            placeholder={recording ? "Listening…" : "Ask Bloom"}
+            placeholderTextColor={colors.textGhost}
             multiline
-            maxLength={500}
+            editable={!recording && !transcribing && !sending}
           />
+
           <TouchableOpacity
-            style={[styles.sendBtn, (!inputText.trim() || isLoading) && styles.sendBtnDisabled]}
-            onPress={sendMessage}
-            disabled={!inputText.trim() || isLoading}
+            style={[
+              styles.sendButton,
+              (!input.trim() || sending) && styles.sendButtonDisabled,
+            ]}
+            onPress={handleSend}
+            disabled={!input.trim() || sending}
           >
-            <Send size={16} color="#FFFFFF" />
+            <Send size={18} color="white" />
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
-
-      {/* Save Modal：replace or new ver. */}
-      <Modal
-        visible={saveModalVisible}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setSaveModalVisible(false)}
-      >
-        <TouchableOpacity
-          style={styles.modalOverlay}
-          onPress={() => setSaveModalVisible(false)}
-        >
-          <View style={styles.saveModal}>
-            <Text style={styles.saveModalTitle}>Save AI-Improved Answer</Text>
-            <Text style={styles.saveModalSub}>
-              How would you like to save the improved version?
-            </Text>
-
-            {/* replace current answer */}
-            <TouchableOpacity
-              style={styles.saveOption}
-              onPress={() => {
-                // TODO：update answer content
-                setSaveModalVisible(false);
-                navigation.goBack();
-              }}
-            >
-              <View style={styles.saveOptionIcon}>
-                <Check size={18} color="#4A7C5E" />
-              </View>
-              <View style={styles.saveOptionText}>
-                <Text style={styles.saveOptionTitle}>Replace current answer</Text>
-                <Text style={styles.saveOptionSub}>Overwrite "{answer.title}"</Text>
-              </View>
-            </TouchableOpacity>
-
-            <View style={styles.saveOptionDivider} />
-
-            {/* save as new ver. */}
-            <TouchableOpacity
-              style={styles.saveOption}
-              onPress={() => {
-                // TODO: new answer and title with "AI Version"
-                setSaveModalVisible(false);
-                navigation.goBack();
-              }}
-            >
-              <View style={styles.saveOptionIcon}>
-                <Copy size={18} color="#C8A45A" />
-              </View>
-              <View style={styles.saveOptionText}>
-                <Text style={styles.saveOptionTitle}>Save as new version</Text>
-                <Text style={styles.saveOptionSub}>Keep both versions</Text>
-              </View>
-            </TouchableOpacity>
-
-          </View>
-        </TouchableOpacity>
-      </Modal>
-
-    </View>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#F5F0E8',
-  },
+  safe: { flex: 1, backgroundColor: colors.bg },
+  flex: { flex: 1 },
   header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingTop: 72,
-    paddingBottom: 16,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.borderSoft,
+    backgroundColor: colors.bgMuted,
   },
-  backBtn: {
-    width: 40, height: 40,
-    alignItems: 'center', justifyContent: 'center',
+  backButton: { flexDirection: "row", alignItems: "center", width: 60 },
+  backText: { color: colors.textMuted, fontSize: fontSize.sm },
+  headerTitle: { flexDirection: "row", alignItems: "center", gap: spacing.xs },
+  headerTitleText: { fontSize: fontSize.sm },
+  bloom: { fontWeight: fontWeight.bold, color: colors.text },
+  headerTitleTextMuted: { color: colors.textFaint },
+  messages: { padding: spacing.lg, gap: spacing.md, paddingBottom: spacing.xl },
+  bubble: { padding: spacing.md, borderRadius: radius.lg, maxWidth: "85%" },
+  botBubble: {
+    backgroundColor: colors.bgMuted,
+    alignSelf: "flex-start",
+    borderTopLeftRadius: 4,
   },
-  botIconContainer: {
-    width: 40, height: 40,
-    borderRadius: 20,
-    backgroundColor: '#EAE6DE',
-    alignItems: 'center',
-    justifyContent: 'center',
+  userBubble: {
+    backgroundColor: colors.orange,
+    alignSelf: "flex-end",
+    borderTopRightRadius: 4,
   },
-  saveBtn: {
-    borderWidth: 1,
-    borderColor: '#D0D5D2',
-    paddingHorizontal: 14,
-    paddingVertical: 7,
-    borderRadius: 20,
-  },
-  saveBtnText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#1C3A2A',
-  },
-  answerPreview: {
-    marginHorizontal: 24,
-    marginBottom: 8,
-    backgroundColor: '#EAE6DE',
-    borderRadius: 12,
-    padding: 14,
-    gap: 3,
-  },
-  answerPreviewTitle: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#1C3A2A',
-  },
-  answerPreviewText: {
-    fontSize: 12,
-    color: '#9BA5A0',
-    lineHeight: 17,
-  },
-  messageList: { flex: 1 },
-  messageListContent: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    gap: 12,
-  },
-  messageRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    gap: 8,
-  },
-  messageRowUser: {
-    justifyContent: 'flex-end',
-  },
-  aiAvatar: {
-    width: 28, height: 28,
-    borderRadius: 14,
-    backgroundColor: '#1C3A2A',
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexShrink: 0,
-  },
-  bubble: {
-    maxWidth: '75%',
-    borderRadius: 16,
-    padding: 12,
-  },
-  bubbleAI: {
-    backgroundColor: '#FFFFFF',
-    borderBottomLeftRadius: 4,
-  },
-  bubbleUser: {
-    backgroundColor: '#1C3A2A',
-    borderBottomRightRadius: 4,
-  },
-  bubbleText: {
-    fontSize: 14,
-    lineHeight: 20,
-  },
-  bubbleTextAI: { color: '#1C3A2A' },
-  bubbleTextUser: { color: '#FFFFFF' },
-  loadingBubble: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    borderBottomLeftRadius: 4,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-  },
-  loadingDots: {
-    fontSize: 10,
-    color: '#9BA5A0',
-    letterSpacing: 2,
-  },
-  inputBar: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    paddingBottom: 32,
-    backgroundColor: '#F5F0E8',
-    gap: 10,
+  bubbleText: { fontSize: fontSize.sm, color: colors.text, lineHeight: 20 },
+  userText: { color: "white" },
+  error: { color: colors.danger, fontSize: fontSize.sm, textAlign: "center" },
+  inputRow: {
+    flexDirection: "row",
+    alignItems: "flex-end",
+    gap: spacing.sm,
+    padding: spacing.md,
     borderTopWidth: 1,
-    borderTopColor: '#EAE6DE',
+    borderTopColor: colors.borderSoft,
+    backgroundColor: colors.bg,
+  },
+  micButton: {
+    width: 40, height: 40, borderRadius: 20,
+    borderWidth: 1, borderColor: colors.border,
+    alignItems: "center", justifyContent: "center",
+  },
+  micButtonActive: {
+    width: 40, height: 40, borderRadius: 20,
+    backgroundColor: colors.danger,
+    alignItems: "center", justifyContent: "center",
   },
   input: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 20,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    fontSize: 14,
-    color: '#1C3A2A',
-    maxHeight: 100,
+    minHeight: 40,
+    maxHeight: 120,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: radius.lg,
     borderWidth: 1,
-    borderColor: '#E8E8E8',
+    borderColor: colors.border,
+    backgroundColor: colors.bg,
+    fontSize: fontSize.sm,
+    color: colors.text,
   },
-  sendBtn: {
-    width: 40, height: 40,
-    borderRadius: 20,
-    backgroundColor: '#1C3A2A',
-    alignItems: 'center',
-    justifyContent: 'center',
+  sendButton: {
+    width: 40, height: 40, borderRadius: 20,
+    backgroundColor: colors.orange,
+    alignItems: "center", justifyContent: "center",
   },
-  sendBtnDisabled: {
-    backgroundColor: '#D0D5D2',
-  },
-  // Save Modal
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.3)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  saveModal: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 20,
-    padding: 24,
-    width: '88%',
-    gap: 16,
-    shadowColor: '#000',
-    shadowOpacity: 0.15,
-    shadowRadius: 20,
-    elevation: 10,
-  },
-  saveModalTitle: {
-    fontSize: 17,
-    fontWeight: '700',
-    color: '#1C3A2A',
-  },
-  saveModalSub: {
-    fontSize: 13,
-    color: '#9BA5A0',
-    marginTop: -8,
-  },
-  saveOption: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 14,
-    paddingVertical: 4,
-  },
-  saveOptionIcon: {
-    width: 40, height: 40,
-    borderRadius: 20,
-    backgroundColor: '#F5F0E8',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  saveOptionText: { flex: 1, gap: 3 },
-  saveOptionTitle: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#1C3A2A',
-  },
-  saveOptionSub: {
-    fontSize: 12,
-    color: '#9BA5A0',
-  },
-  saveOptionDivider: {
-    height: 1,
-    backgroundColor: '#F0EDE6',
-  },
+  sendButtonDisabled: { opacity: 0.4 },
 });

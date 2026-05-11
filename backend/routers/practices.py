@@ -39,6 +39,43 @@ def _verify_question_ownership(db: Session, user_id: str, question_id: str):
         raise HTTPException(status_code=404, detail="Question not found")
 
 
+@router.get("/", response_model=list[PracticeOut])
+def list_practices(
+    question_id: str,
+    credentials: HTTPAuthorizationCredentials = Depends(bearer),
+    db: Session = Depends(get_db),
+):
+    """List practices for a specific question. Ownership-checked: the question
+    must belong to the caller, otherwise we 404."""
+    user_id = _get_current_user_id(credentials)
+    _verify_question_ownership(db, user_id, question_id)
+
+    result = db.run(
+        """
+        MATCH (u:User {id: $user_id})-[:HAS_QUESTION]->(q:Question {id: $q_id})-[:HAS_PRACTICE]->(p:Practice)
+        RETURN p ORDER BY p.created_at DESC
+        """,
+        user_id=user_id,
+        q_id=question_id,
+    )
+    out: list[PracticeOut] = []
+    for row in result.data():
+        p = row["p"]
+        # ai_feedback is stored as raw markdown OR (legacy) JSON string. Surface
+        # as-is — clients render via markdown anyway.
+        out.append(
+            PracticeOut(
+                id=p["id"],
+                tag=p["tag"],
+                duration=p["duration"],
+                transcript=p["transcript"],
+                ai_feedback=p.get("ai_feedback"),
+                created_at=p["created_at"],
+            )
+        )
+    return out
+
+
 @router.post("/", response_model=PracticeOut, status_code=201)
 def create_practice(
     data: PracticeCreate,

@@ -12,7 +12,10 @@
       "backgroundColor": "#ffffff"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSMicrophoneUsageDescription": "OfferBloom uses your microphone to record practice interview answers."
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -21,6 +24,7 @@
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
+      "permissions": ["RECORD_AUDIO"],
       "predictiveBackGestureEnabled": false
     },
     "web": {
