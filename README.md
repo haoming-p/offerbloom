@@ -177,14 +177,6 @@ Authoritative ownership is via JSON properties on `:User` for roles/positions/st
 | | npm | Frontend + mobile deps | `frontend/package.json`, `mobile/package.json` |
 | | pip + venv | Backend deps | `backend/requirements.txt` |
 
-### What we do **not** use (despite earlier plans)
-
-- ❌ Vector embeddings / vector DB — RAG is pure Cypher traversal, scoped per user
-- ❌ OpenAI for chat — we use Anthropic Claude; OpenAI is only for Whisper transcription
-- ❌ SpaCy for NER — JDs are stored as plain text; the LLM extracts on demand
-- ❌ Redis / Celery — all AI calls are synchronous in-request
-- ❌ react-table / dnd-kit — custom tables and a simpler reorder pattern
-
 ---
 
 ## Running locally
