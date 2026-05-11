@@ -24,7 +24,7 @@ const CUSTOM_COLORS = [
   { bg: "bg-teal-50", text: "text-teal-600", dot: "bg-teal-400" },
 ];
 
-const PositionsTab = ({ data, onUpdatePositionsData }) => {
+const PositionsPage = ({ data, onUpdatePositionsData }) => {
   const [roles, setRoles] = useState(data?.roles || []);
   const [positions, setPositions] = useState(
     (data?.positions || []).map((p) => ({
@@ -915,4 +915,4 @@ const PositionsTab = ({ data, onUpdatePositionsData }) => {
   );
 };
 
-export default PositionsTab;
+export default PositionsPage;

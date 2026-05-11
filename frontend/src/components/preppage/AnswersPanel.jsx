@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { LuClipboardList, LuPencil } from "react-icons/lu";
-import RichTextEditor from "../../RichTextEditor";
-import { defaultAnswerLabel } from "../../../utils/timestamps";
+import RichTextEditor from "../RichTextEditor";
+import { defaultAnswerLabel } from "../../utils/timestamps";
 
 const AnswersPanel = ({
   question,

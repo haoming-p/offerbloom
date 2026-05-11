@@ -12,7 +12,7 @@ from config import settings
 from auth.jwt import decode_token
 from database import get_db
 from storage import download_file
-from services.rag_context import build_rag_context
+from services.rag_context import build_rag_context, load_user_preferences
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 bearer = HTTPBearer()
@@ -253,6 +253,9 @@ def chat(
     # See services/rag_context.py for exactly what's retrieved + token caps.
     # Silent failure: if retrieval errors, chat still works without context.
     # ---------------------------------------------------------------------
+    # Resolve the role_id of the active question so prep-scope preferences
+    # filtered by role can be applied. None outside of answer_draft chats.
+    chat_role_id: Optional[str] = None
     if body.question_id:
         try:
             rag_block = build_rag_context(
@@ -264,9 +267,30 @@ def chat(
             )
             if rag_block:
                 system += "\n\n" + rag_block
+            # Cheap second query — we just need role_id for preference scoping.
+            role_record = db.run(
+                "MATCH (q:Question {id: $qid}) RETURN q.role_id AS role_id",
+                qid=body.question_id,
+            ).single()
+            if role_record:
+                chat_role_id = role_record["role_id"]
         except Exception as e:
             # Don't break chat if RAG retrieval fails — just log and continue.
             print(f"[chat] RAG retrieval failed for q={body.question_id}: {e}")
+
+    # User AI preferences — loaded regardless of question_id. Scope follows
+    # the chat context so prep rules don't bleed into file review and vice versa.
+    pref_scope = (
+        "prep" if body.context == "answer_draft"
+        else "files" if body.context == "file_review"
+        else "all"
+    )
+    try:
+        pref_block = load_user_preferences(db, user_id, pref_scope, chat_role_id)
+        if pref_block:
+            system += "\n\n" + pref_block
+    except Exception as e:
+        print(f"[chat] preference load failed for user={user_id}: {e}")
 
     messages = [{"role": m.role, "content": m.content} for m in body.history]
 

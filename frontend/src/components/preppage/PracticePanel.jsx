@@ -2,7 +2,7 @@ import { useState, useRef } from "react";
 import { LuMic, LuSquare, LuRotateCcw, LuSave } from "react-icons/lu";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { defaultPracticeTag } from "../../../utils/timestamps";
+import { defaultPracticeTag } from "../../utils/timestamps";
 
 // Same markdown styling as the AI panel — keeps saved feedback on the practice
 // card visually consistent with how it looked inside the chat bubble.

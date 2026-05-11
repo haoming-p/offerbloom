@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from "react";
 import TopBar from "../components/homepage/TopBar";
 import SideBar from "../components/homepage/SideBar";
-import DashboardTab from "../components/homepage/DashboardTab";
-import PositionsTab from "../components/homepage/PositionsTab";
-import FilesTab from "../components/homepage/filetab/FilesTab";
-import PrepTab from "../components/homepage/preptab/PrepTab";
-import MeTab from "../components/homepage/MeTab";
+import DashboardPage from "./DashboardPage";
+import PositionsPage from "./PositionsPage";
+import FilesPage from "./FilesPage";
+import PrepPage from "./PrepPage";
+import MePage from "./MePage";
 import SaveToAccountModal from "../components/homepage/SaveToAccountModal";
 import ResetDemoModal from "../components/homepage/ResetDemoModal";
 import { resetDemo } from "../services/demo";
@@ -66,14 +66,14 @@ const HomePage = ({ data, user, onLogout, onUpdatePositionsData, onUpdateCategor
     // Normal tab rendering
     switch (activeTab) {
       case "dashboard":
-        return <DashboardTab data={data} user={user} onNavigateToPrep={(roleId) => { setPrepDefaultRole(roleId); setActiveTab("prep"); }} />;
+        return <DashboardPage data={data} user={user} onNavigateToPrep={(roleId) => { setPrepDefaultRole(roleId); setActiveTab("prep"); }} />;
       case "positions":
-        return <PositionsTab data={data} onUpdatePositionsData={onUpdatePositionsData} />;
+        return <PositionsPage data={data} onUpdatePositionsData={onUpdatePositionsData} />;
       case "files":
-        return <FilesTab data={data} />;
+        return <FilesPage data={data} />;
       case "prep":
         return (
-          <PrepTab
+          <PrepPage
             data={data}
             user={user}
             defaultRoleId={prepDefaultRole}
@@ -81,7 +81,7 @@ const HomePage = ({ data, user, onLogout, onUpdatePositionsData, onUpdateCategor
           />
         );
       case "me":
-        return <MeTab user={user} onLogout={onLogout} />;
+        return <MePage user={user} roles={data?.roles || []} onLogout={onLogout} />;
       default:
         return (
           <div className="flex-1 flex items-center justify-center text-gray-300 text-lg">

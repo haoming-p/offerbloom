@@ -1,11 +1,11 @@
 import { useState, useEffect, useRef } from "react";
-import PrepNavigator from "./PrepNavigator";
-import PrepCategoryTabs, { ALL_CATEGORY_ID } from "./PrepCategoryTabs";
-import PrepTable from "./PrepTable";
-import QuestionDetailPage from "./QuestionDetailPage";
-import { fetchQuestions, addQuestion, deleteQuestion, updateQuestion, reorderQuestions } from "../../../services/questions";
-import { addAnswer, updateAnswer, deleteAnswer } from "../../../services/answers";
-import { addPractice, deletePractice } from "../../../services/practices";
+import PrepNavigator from "../components/preppage/PrepNavigator";
+import PrepCategoryTabs, { ALL_CATEGORY_ID } from "../components/preppage/PrepCategoryTabs";
+import PrepTable from "../components/preppage/PrepTable";
+import QuestionDetailPage from "../components/preppage/QuestionDetailPage";
+import { fetchQuestions, addQuestion, deleteQuestion, updateQuestion, reorderQuestions } from "../services/questions";
+import { addAnswer, updateAnswer, deleteAnswer } from "../services/answers";
+import { addPractice, deletePractice } from "../services/practices";
 
 // Per-role default categories. Users can edit/add/delete from these defaults
 // in the UI; their saved list (in data.categories) wins on subsequent loads.
@@ -30,17 +30,48 @@ const defaultsForRole = (roleId) => DEFAULT_CATEGORIES_BY_ROLE[roleId] || [];
 
 const makeKey = (roleId, posKey, catId) => `${roleId}-${posKey}-${catId}`;
 
-const PrepTab = ({ data, user, defaultRoleId, onUpdateCategories }) => {
+// Session-persisted nav state. sessionStorage (not localStorage) so refresh
+// keeps the user in place but closing the tab returns to defaults next time.
+const STORAGE_KEY = "preptab.view";
+const readSavedView = () => {
+  try {
+    const raw = sessionStorage.getItem(STORAGE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+};
+const writeSavedView = (state) => {
+  try {
+    sessionStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  } catch {}
+};
+
+const PrepPage = ({ data, user, defaultRoleId, onUpdateCategories }) => {
   const { roles = [], positions = [], categories: savedCategories = {} } = data || {};
   const isDemoGuest = user?.is_demo_guest;
 
+  // Restore saved nav state on mount so a browser refresh keeps the user on
+  // the same question detail page (or the same role/position/category tab).
+  // Sanity-fall back to the default if a saved role no longer exists.
+  const savedView = readSavedView();
+  const savedRoleExists =
+    savedView?.activeRoleId && roles.some((r) => r.id === savedView.activeRoleId);
+
   // --- Active selections ---
-  const [activeRoleId, setActiveRoleId] = useState(defaultRoleId || roles[0]?.id || "");
-  const [activePositionKey, setActivePositionKey] = useState("general");
-  const [activeCategoryId, setActiveCategoryId] = useState(ALL_CATEGORY_ID);
+  const [activeRoleId, setActiveRoleId] = useState(
+    (savedRoleExists ? savedView.activeRoleId : null) || defaultRoleId || roles[0]?.id || ""
+  );
+  const [activePositionKey, setActivePositionKey] = useState(savedView?.activePositionKey || "general");
+  const [activeCategoryId, setActiveCategoryId] = useState(savedView?.activeCategoryId || ALL_CATEGORY_ID);
 
   // --- View routing: "table" | { page: "detail", questionId }
-  const [currentView, setCurrentView] = useState("table");
+  const [currentView, setCurrentView] = useState(savedView?.currentView || "table");
+
+  // Tracks which (role-position-category) keys have completed a fetch attempt.
+  // Used to distinguish "still loading" from "loaded but question not found"
+  // so refreshing on a detail page shows a loader instead of an error flash.
+  const [loadedKeys, setLoadedKeys] = useState(() => new Set());
 
   // --- Roles & Positions sidebar collapse ---
   const [navCollapsed, setNavCollapsed] = useState(false);
@@ -101,7 +132,12 @@ const PrepTab = ({ data, user, defaultRoleId, onUpdateCategories }) => {
   // Fetch when the active selection changes
   useEffect(() => {
     if (!activeRoleId) return;
-    if (questions[currentKey]) return; // already cached
+    if (questions[currentKey]) {
+      // Already cached — count it as "loaded" so the detail-view loader
+      // doesn't hang on a key that was hydrated by a previous fetch.
+      setLoadedKeys((prev) => (prev.has(currentKey) ? prev : new Set(prev).add(currentKey)));
+      return;
+    }
     const catParam = activeCategoryId === ALL_CATEGORY_ID ? null : activeCategoryId;
     fetchQuestions(activeRoleId, catParam, activePositionKey)
       .then((data) => {
@@ -117,8 +153,16 @@ const PrepTab = ({ data, user, defaultRoleId, onUpdateCategories }) => {
         }));
         setQuestions((prev) => ({ ...prev, [currentKey]: mapped }));
       })
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => {
+        setLoadedKeys((prev) => (prev.has(currentKey) ? prev : new Set(prev).add(currentKey)));
+      });
   }, [currentKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Persist nav state to sessionStorage on every change so a refresh restores it.
+  useEffect(() => {
+    writeSavedView({ activeRoleId, activePositionKey, activeCategoryId, currentView });
+  }, [activeRoleId, activePositionKey, activeCategoryId, currentView]);
 
   // ============================================================
   // Selection handlers
@@ -462,6 +506,13 @@ const PrepTab = ({ data, user, defaultRoleId, onUpdateCategories }) => {
               onBack={() => setCurrentView("table")}
               onNavigate={(id) => setCurrentView({ page: "detail", questionId: id })}
             />
+          ) : currentView?.page === "detail" && !loadedKeys.has(currentKey) ? (
+            // Detail view requested but the question list for this category
+            // hasn't finished loading yet. Show a quiet loader instead of
+            // briefly flashing "Question not found" right after a refresh.
+            <div className="flex items-center justify-center h-48 text-sm text-gray-300">
+              Loading…
+            </div>
           ) : (
             <div className="flex flex-col items-center justify-center h-48 text-gray-300">
               <span className="text-lg mb-2">Question not found</span>
@@ -479,4 +530,4 @@ const PrepTab = ({ data, user, defaultRoleId, onUpdateCategories }) => {
   );
 };
 
-export default PrepTab;
+export default PrepPage;

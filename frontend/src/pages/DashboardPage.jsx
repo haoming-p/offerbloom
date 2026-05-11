@@ -1,7 +1,7 @@
 import { LuFileText, LuFileUser, LuArrowRight } from "react-icons/lu";
-import FloatingChatBot from "./FloatingChatBot";
+import FloatingChatBot from "../components/dashboardpage/FloatingChatBot";
 
-const DashboardTab = ({ data, user, onNavigateToPrep }) => {
+const DashboardPage = ({ data, user, onNavigateToPrep }) => {
   const { roles = [], positions = [], files = [] } = data || {};
   const isDemoGuest = user?.is_demo_guest;
 
@@ -128,4 +128,4 @@ const DashboardTab = ({ data, user, onNavigateToPrep }) => {
   );
 };
 
-export default DashboardTab;
+export default DashboardPage;

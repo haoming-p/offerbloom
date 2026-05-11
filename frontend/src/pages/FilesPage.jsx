@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from "react";
-import FilesList from "./FilesList";
-import ContentLibrary from "./ContentLibrary";
-import FileAIChat from "./FileAIChat";
-import { listFiles, deleteFile, updateFileLinks } from "../../../services/files";
+import FilesList from "../components/filespage/FilesList";
+import ContentLibrary from "../components/filespage/ContentLibrary";
+import FileAIChat from "../components/filespage/FileAIChat";
+import { listFiles, deleteFile, updateFileLinks } from "../services/files";
 
 // Convert backend's [{kind, id, label}] into the flat string array the UI uses
 // (raw role id, or "pos-{positionId}" for positions).
@@ -29,7 +29,7 @@ const VIEW_TABS = [
   { id: "library", label: "📝 Content Library" },
 ];
 
-const FilesTab = ({ data }) => {
+const FilesPage = ({ data }) => {
   const { roles = [], positions = [], files: initialFiles = [] } = data || {};
 
   // --- Local state ---
@@ -203,4 +203,4 @@ const FilesTab = ({ data }) => {
   );
 };
 
-export default FilesTab;
+export default FilesPage;
