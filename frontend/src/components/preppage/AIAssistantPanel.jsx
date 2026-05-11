@@ -3,15 +3,16 @@ import { LuSparkles, LuX } from "react-icons/lu";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { marked } from "marked";
-import { sendChatMessage } from "../../../services/chat";
-import { saveFeedbackMarkdown } from "../../../services/practices";
+import { sendChatMessage } from "../../services/chat";
+import { saveFeedbackMarkdown } from "../../services/practices";
+import { createPreference } from "../../services/preferences";
 import {
   listChatSessions,
   createChatSession,
   getSessionMessages,
-} from "../../../services/chatSessions";
-import { defaultAnswerLabel } from "../../../utils/timestamps";
-import BloomAvatar from "../../BloomAvatar";
+} from "../../services/chatSessions";
+import { defaultAnswerLabel } from "../../utils/timestamps";
+import BloomAvatar from "../BloomAvatar";
 
 // Greeting shown on a fresh session before any real reply.
 const greeting = () => ({
@@ -98,6 +99,9 @@ const AIAssistantPanel = forwardRef(({
 
   // Per-message save indicator: { [messageIndex]: "saved-new" | "saved-update" }
   const [savedFlags, setSavedFlags] = useState({});
+
+  // Per-user-message remembered indicator: { [messageIndex]: true }
+  const [rememberedFlags, setRememberedFlags] = useState({});
 
   const [sessionId, setSessionId] = useState(null);
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -202,6 +206,18 @@ const AIAssistantPanel = forwardRef(({
       } catch {}
     }
 
+    // Snapshot the selection state at the time the message is sent. We attach
+    // this to the bot reply so its action buttons (and labels) stay anchored
+    // to *that* turn — switching selection later must not retroactively change
+    // the buttons on older replies.
+    const ctxSnapshot = {
+      kind: selectionKind,
+      answerId: selectedAnswer?.id || null,
+      answerLabel: selectedAnswer?.label || null,
+      practiceId: selectedPractice?.id || null,
+      practiceTag: selectedPractice?.tag || null,
+    };
+
     const updated = [...chatMessages, { sender: "user", text: trimmed }];
     setChatMessages(updated);
     setChatLoading(true);
@@ -216,11 +232,11 @@ const AIAssistantPanel = forwardRef(({
         selectedPracticeId: selectedPractice?.id || null,
         history: chatMessages,
       });
-      setChatMessages([...updated, { sender: "bot", text: reply }]);
+      setChatMessages([...updated, { sender: "bot", text: reply, selectionContext: ctxSnapshot }]);
     } catch {
       setChatMessages([
         ...updated,
-        { sender: "bot", text: "Sorry, couldn't connect. Try again." },
+        { sender: "bot", text: "Sorry, couldn't connect. Try again.", selectionContext: ctxSnapshot },
       ]);
     } finally {
       setChatLoading(false);
@@ -240,6 +256,7 @@ const AIAssistantPanel = forwardRef(({
       }
     }
     const lastBot = lastBotIndex >= 0 ? chatMessages[lastBotIndex] : null;
+    const lastCtx = lastBot?.selectionContext || { kind: "none" };
 
     switch (action) {
       case "save-as-new":
@@ -247,10 +264,13 @@ const AIAssistantPanel = forwardRef(({
         handleSaveAsNew(lastBotIndex, lastBot.text);
         return true;
       case "update-selected":
-        if (!lastBot || !selectedAnswer) return false;
-        handleUpdateSelected(lastBotIndex, lastBot.text);
+        // Update targets the answer that was selected when that reply was
+        // generated — not whatever's selected now.
+        if (!lastBot || !lastCtx.answerId) return false;
+        handleUpdateSelected(lastBotIndex, lastBot.text, lastCtx.answerId, lastCtx.answerLabel);
         return true;
       case "refine":
+        // refine/get-feedback fire a NEW message, so they read live selection.
         if (!selectedAnswer) return false;
         sendMessage("Refine the selected answer.");
         return true;
@@ -259,15 +279,17 @@ const AIAssistantPanel = forwardRef(({
         sendMessage("Give feedback on this practice.");
         return true;
       case "follow-ups":
+        // Conversation-follow-up shortcuts follow the thread of the last reply,
+        // not the user's current selection.
         sendMessage(
-          selectionKind === "practice"
+          lastCtx.kind === "practice"
             ? "What are likely follow-up questions for this practice attempt?"
             : "What are likely follow-up questions for this answer?"
         );
         return true;
       case "recommendations":
         sendMessage(
-          selectionKind === "practice"
+          lastCtx.kind === "practice"
             ? "What recommendations do you have to improve this practice attempt? If none stand out, say so."
             : "What recommendations do you have to improve this answer? If none stand out, say so."
         );
@@ -307,11 +329,14 @@ const AIAssistantPanel = forwardRef(({
     } catch {}
   };
 
-  const handleUpdateSelected = async (msgIndex, text) => {
-    if (!onUpdateAnswer || !selectedAnswer) return;
+  // answerId/answerLabel come from the message's captured selectionContext,
+  // not live state — so this still updates the right answer even if the user
+  // has since changed selection.
+  const handleUpdateSelected = async (msgIndex, text, answerId, answerLabel) => {
+    if (!onUpdateAnswer || !answerId) return;
     const html = mdToHtml(text);
     try {
-      await onUpdateAnswer(selectedAnswer.id, selectedAnswer.label, html);
+      await onUpdateAnswer(answerId, answerLabel, html);
       setSavedFlags((p) => ({ ...p, [msgIndex]: "saved-update" }));
       setTimeout(() => setSavedFlags((p) => {
         const next = { ...p }; delete next[msgIndex]; return next;
@@ -319,16 +344,28 @@ const AIAssistantPanel = forwardRef(({
     } catch {}
   };
 
-  // Save the bot reply (raw markdown) to the selected Practice as ai_feedback.
-  // Different from handleSaveAsNew: we keep markdown verbatim instead of
-  // converting to TipTap HTML, since the practice card renders it as markdown.
-  const handleSaveFeedbackToPractice = async (msgIndex, text) => {
-    if (!selectedPractice || !onUpdatePractices) return;
+  // Save a user message as a persisted AI preference (scope=prep, role_id null
+  // so it applies across all roles by default — user can narrow later in Me tab).
+  const handleRememberPreference = async (msgIndex, text) => {
+    const trimmed = (text || "").trim();
+    if (!trimmed) return;
+    if (rememberedFlags[msgIndex]) return; // already saved
     try {
-      const updated = await saveFeedbackMarkdown(selectedPractice.id, text);
+      await createPreference({ text: trimmed, scope: "prep", roleId: null });
+      setRememberedFlags((p) => ({ ...p, [msgIndex]: true }));
+    } catch {}
+  };
+
+  // Save the bot reply (raw markdown) to a Practice as ai_feedback. The
+  // practiceId comes from the message's captured selectionContext so the save
+  // targets the practice that was selected when the reply was generated.
+  const handleSaveFeedbackToPractice = async (msgIndex, text, practiceId) => {
+    if (!practiceId || !onUpdatePractices) return;
+    try {
+      const updated = await saveFeedbackMarkdown(practiceId, text);
       onUpdatePractices(
         (question.practices || []).map((p) =>
-          p.id === selectedPractice.id ? { ...p, aiFeedback: updated.ai_feedback } : p
+          p.id === practiceId ? { ...p, aiFeedback: updated.ai_feedback } : p
         )
       );
       setSavedFlags((p) => ({ ...p, [msgIndex]: "saved-feedback" }));
@@ -426,14 +463,34 @@ const AIAssistantPanel = forwardRef(({
           const showActions = isBot && !msg.isGreeting && !isClarification(msg.text);
           const flag = savedFlags[i];
           if (!isBot) {
+            const remembered = !!rememberedFlags[i];
             return (
               <div key={i} className="flex justify-end">
-                <div className="max-w-[85%] px-4 py-2.5 rounded-2xl rounded-br-sm bg-orange-400 text-white text-sm whitespace-pre-wrap">
-                  {msg.text}
+                <div className="flex flex-col items-end max-w-[85%] gap-1">
+                  <div className="px-4 py-2.5 rounded-2xl rounded-br-sm bg-orange-400 text-white text-sm whitespace-pre-wrap">
+                    {msg.text}
+                  </div>
+                  <button
+                    onClick={() => handleRememberPreference(i, msg.text)}
+                    disabled={remembered}
+                    title={remembered ? "Saved · manage in Me tab" : "Save as an AI preference — applied to future replies"}
+                    className={`text-[10px] px-2 py-0.5 rounded-full border cursor-pointer ${
+                      remembered
+                        ? "border-orange-200 bg-orange-50 text-orange-500 cursor-default"
+                        : "border-gray-200 text-gray-400 hover:border-orange-300 hover:text-orange-500"
+                    }`}
+                  >
+                    {remembered ? "✓ Remembered" : "Remember this"}
+                  </button>
                 </div>
               </div>
             );
           }
+          // Use the message's captured selection context, not live state, so
+          // the buttons stay anchored to the turn that produced this reply.
+          // Loaded session history has no context — default to "none".
+          const msgCtx = msg.selectionContext || { kind: "none" };
+          const msgKind = msgCtx.kind;
           return (
             <div key={i} className="flex items-start gap-2.5">
               <BloomAvatar size={32} />
@@ -445,14 +502,11 @@ const AIAssistantPanel = forwardRef(({
                 </div>
                 {showActions && (
                   <div className="flex flex-wrap gap-1.5 px-3 pb-3 pt-1 border-t border-gray-50 mt-1">
-                    {/* Buttons adapt to selection:
-                        - practice → Save feedback to practice + ask buttons
-                        - answer or nothing → Save as new + (optionally) Update + ask buttons */}
-                    {selectionKind === "practice" ? (
+                    {msgKind === "practice" && msgCtx.practiceId ? (
                       <button
-                        onClick={() => handleSaveFeedbackToPractice(i, msg.text)}
+                        onClick={() => handleSaveFeedbackToPractice(i, msg.text, msgCtx.practiceId)}
                         className="text-[11px] px-2.5 py-1 rounded border border-orange-300 bg-orange-50 text-orange-600 hover:bg-orange-100 cursor-pointer"
-                        title={`Save this reply as feedback on ${selectedPractice.tag}`}
+                        title={`Save this reply as feedback on ${msgCtx.practiceTag || "practice"}`}
                       >
                         {flag === "saved-feedback" ? "✓ Saved" : "Save feedback to practice"}
                       </button>
@@ -464,11 +518,11 @@ const AIAssistantPanel = forwardRef(({
                         >
                           {flag === "saved-new" ? "✓ Saved" : "Save as new answer"}
                         </button>
-                        {selectedAnswer && (
+                        {msgCtx.answerId && (
                           <button
-                            onClick={() => handleUpdateSelected(i, msg.text)}
+                            onClick={() => handleUpdateSelected(i, msg.text, msgCtx.answerId, msgCtx.answerLabel)}
                             className="text-[11px] px-2.5 py-1 rounded border border-orange-300 bg-orange-50 text-orange-600 hover:bg-orange-100 cursor-pointer"
-                            title={`Overwrite ${selectedAnswer.label}`}
+                            title={`Overwrite ${msgCtx.answerLabel}`}
                           >
                             {flag === "saved-update" ? "✓ Updated" : "Update selected"}
                           </button>
@@ -478,7 +532,7 @@ const AIAssistantPanel = forwardRef(({
                     <button
                       onClick={() =>
                         sendMessage(
-                          selectionKind === "practice"
+                          msgKind === "practice"
                             ? "What are likely follow-up questions for this practice attempt?"
                             : "What are likely follow-up questions for this answer?"
                         )
@@ -491,7 +545,7 @@ const AIAssistantPanel = forwardRef(({
                     <button
                       onClick={() =>
                         sendMessage(
-                          selectionKind === "practice"
+                          msgKind === "practice"
                             ? "What recommendations do you have to improve this practice attempt? If none stand out, say so."
                             : "What recommendations do you have to improve this answer? If none stand out, say so."
                         )

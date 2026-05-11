@@ -43,6 +43,59 @@ def _strip_html(text: str) -> str:
     return text
 
 
+def load_user_preferences(
+    db: Session,
+    user_id: str,
+    scope: str,
+    role_id: str | None = None,
+) -> str:
+    """Return a "User AI preferences" prompt block, or '' if none apply.
+
+    scope: 'prep' (in the prep tab AI) | 'files' (file review AI) | 'all'
+      (used by uncategorized chats — returns prefs scoped to 'all' only).
+
+    For 'prep' or 'files', a pref applies if its own scope is 'all' OR matches
+    the caller's scope. Additionally, for 'prep' we filter by role_id: a pref
+    with empty role_id applies to all roles; otherwise it must match.
+    """
+    if scope not in ("prep", "files", "all"):
+        return ""
+
+    # Build scope list — 'all'-scoped prefs always apply.
+    scopes = ["all"]
+    if scope in ("prep", "files"):
+        scopes.append(scope)
+
+    result = db.run(
+        """
+        MATCH (u:User {id: $user_id})-[:HAS_PREFERENCE]->(p:Preference)
+        WHERE p.scope IN $scopes
+          AND (
+            $scope <> 'prep'
+            OR p.role_id IS NULL
+            OR p.role_id = ''
+            OR p.role_id = $role_id
+          )
+        RETURN p.text AS text ORDER BY p.created_at ASC
+        """,
+        user_id=user_id,
+        scopes=scopes,
+        scope=scope,
+        role_id=role_id or "",
+    )
+    lines = [r["text"] for r in result.data() if r.get("text")]
+    if not lines:
+        return ""
+
+    header = (
+        "=== USER AI PREFERENCES ===\n"
+        "The user has saved the following style rules. Follow them when relevant. "
+        "If a rule conflicts with the default output format above, the user's rule wins.\n"
+    )
+    body = "\n".join(f"  — {ln}" for ln in lines)
+    return header + body + "\n=== END USER PREFERENCES ==="
+
+
 def build_rag_context(
     db: Session,
     user_id: str,

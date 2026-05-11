@@ -1,8 +1,9 @@
 import React, { useState, useRef, useEffect } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { sendChatMessage } from "../../../services/chat";
-import BloomAvatar from "../../BloomAvatar";
+import { sendChatMessage } from "../../services/chat";
+import { createPreference } from "../../services/preferences";
+import BloomAvatar from "../BloomAvatar";
 
 const CopyButton = ({ text }) => {
   const [copied, setCopied] = useState(false);
@@ -72,10 +73,26 @@ const BotMessage = ({ text }) => (
   </div>
 );
 
-const UserMessage = ({ text }) => (
+const UserMessage = ({ text, remembered, onRemember }) => (
   <div className="flex justify-end">
-    <div className="max-w-[85%] px-4 py-2.5 rounded-2xl rounded-br-sm bg-orange-400 text-white text-sm whitespace-pre-wrap">
-      {text}
+    <div className="flex flex-col items-end max-w-[85%] gap-1">
+      <div className="px-4 py-2.5 rounded-2xl rounded-br-sm bg-orange-400 text-white text-sm whitespace-pre-wrap">
+        {text}
+      </div>
+      {onRemember && (
+        <button
+          onClick={onRemember}
+          disabled={remembered}
+          title={remembered ? "Saved · manage in Me tab" : "Save as an AI preference — applied to future replies"}
+          className={`text-[10px] px-2 py-0.5 rounded-full border cursor-pointer ${
+            remembered
+              ? "border-orange-200 bg-orange-50 text-orange-500 cursor-default"
+              : "border-gray-200 text-gray-400 hover:border-orange-300 hover:text-orange-500"
+          }`}
+        >
+          {remembered ? "✓ Remembered" : "Remember this"}
+        </button>
+      )}
     </div>
   </div>
 );
@@ -137,6 +154,19 @@ const FileAIChat = ({ selectedFile, activeSection }) => {
     }
   };
 
+  // Per-user-message remembered indicator: { [messageIndex]: true }
+  const [rememberedFlags, setRememberedFlags] = useState({});
+  const handleRemember = async (msgIndex, text) => {
+    const trimmed = (text || "").trim();
+    if (!trimmed || rememberedFlags[msgIndex]) return;
+    try {
+      // Scope=files because we're in the file-review chat; role_id stays null
+      // since file review isn't role-specific.
+      await createPreference({ text: trimmed, scope: "files", roleId: null });
+      setRememberedFlags((p) => ({ ...p, [msgIndex]: true }));
+    } catch {}
+  };
+
   const contextName = selectedFile ? selectedFile.name : activeSection ? activeSection.label : null;
 
   const quickPrompts = selectedFile
@@ -185,7 +215,12 @@ const FileAIChat = ({ selectedFile, activeSection }) => {
       <div className="flex-1 overflow-y-auto px-5 py-4 flex flex-col gap-4 show-scrollbar">
         {messages.map((msg, i) =>
           msg.sender === "user" ? (
-            <UserMessage key={i} text={msg.text} />
+            <UserMessage
+              key={i}
+              text={msg.text}
+              remembered={!!rememberedFlags[i]}
+              onRemember={() => handleRemember(i, msg.text)}
+            />
           ) : (
             <BotMessage key={i} text={msg.text} />
           )

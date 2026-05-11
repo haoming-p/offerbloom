@@ -1,5 +1,5 @@
 import React, { useState, useRef } from "react";
-import { uploadFile } from "../../../services/files";
+import { uploadFile } from "../../services/files";
 
 // Helper: get icon based on file name or type
 const getFileIcon = (file) => {

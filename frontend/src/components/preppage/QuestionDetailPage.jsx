@@ -3,7 +3,7 @@ import { LuChevronLeft, LuChevronRight, LuPencil, LuPanelLeftClose, LuPanelLeftO
 import AnswersPanel from "./AnswersPanel";
 import PracticePanel from "./PracticePanel";
 import AIAssistantPanel from "./AIAssistantPanel";
-import { updateQuestion as updateQuestionApi } from "../../../services/questions";
+import { updateQuestion as updateQuestionApi } from "../../services/questions";
 
 // Reusable column wrapper: header (title + optional extra actions + collapse button),
 // body slot, collapsed strip. extraActions render between the title and the collapse btn.
