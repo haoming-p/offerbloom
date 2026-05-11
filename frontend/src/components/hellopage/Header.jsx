@@ -1,5 +1,3 @@
-import bloomLogo from "../../assets/bloom.png";
-
 const Header = ({ onSignIn, onSignUp }) => {
   function scrollTo(id) {
     document.getElementById(id)?.scrollIntoView({ behavior: "smooth" });
@@ -9,7 +7,7 @@ const Header = ({ onSignIn, onSignUp }) => {
     <header className="absolute top-0 left-0 right-0 z-10 px-16 py-5 bg-white/60 backdrop-blur-sm">
       <div className="max-w-7xl mx-auto flex items-center justify-between">
         <div className="flex items-center gap-2.5">
-          <img src={bloomLogo} alt="" className="w-9 h-9 rounded-full ring-2 ring-orange-200" />
+          <img src="/icon.png" alt="" className="w-11 h-11" />
           <span className="text-2xl font-bold text-orange-500">OfferBloom</span>
         </div>
         <nav className="flex items-center gap-8 text-sm text-gray-600">
