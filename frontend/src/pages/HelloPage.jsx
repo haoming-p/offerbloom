@@ -6,8 +6,6 @@ import MultiRoleSection from "../components/hellopage/MultiRoleSection";
 import KnowledgeBaseSection from "../components/hellopage/KnowledgeBaseSection";
 import PracticeSection from "../components/hellopage/PracticeSection";
 import MobileSection from "../components/hellopage/MobileSection";
-import TechStackSection from "../components/hellopage/TechStackSection";
-import FAQSection from "../components/hellopage/FAQSection";
 import Footer from "../components/hellopage/Footer";
 
 const HelloPage = ({ onAuthSuccess, onTryDemo }) => {
@@ -56,9 +54,11 @@ const HelloPage = ({ onAuthSuccess, onTryDemo }) => {
         <KnowledgeBaseSection />
         <PracticeSection />
         <MobileSection />
-        <TechStackSection />
-        <FAQSection />
-        <Footer />
+        <Footer
+          onSignIn={() => openModal("signin")}
+          onSignUp={() => openModal("signup")}
+          onTryDemo={onTryDemo}
+        />
       </div>
 
       {/* Auth Modal — outside scroll container so it overlays cleanly */}
