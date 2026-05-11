@@ -19,6 +19,9 @@ export async function sendChat({
   contextData = null,
   questionId = null,
   sessionId = null,
+  selectedAnswerId = null,
+  selectedPracticeId = null,
+  fileId = null,
   history = [],
 }: {
   message: string;
@@ -26,14 +29,24 @@ export async function sendChat({
   contextData?: unknown;
   questionId?: string | null;
   sessionId?: string | null;
+  selectedAnswerId?: string | null;
+  selectedPracticeId?: string | null;
+  fileId?: string | null;
   history?: ChatMessage[];
 }): Promise<string> {
-  const body: ChatBody = {
+  const body: ChatBody & {
+    selected_answer_id?: string | null;
+    selected_practice_id?: string | null;
+    file_id?: string | null;
+  } = {
     message,
     context,
     context_data: contextData,
     question_id: questionId,
     session_id: sessionId,
+    selected_answer_id: selectedAnswerId,
+    selected_practice_id: selectedPracticeId,
+    file_id: fileId,
     history,
   };
   const data = await apiFetch<{ reply: string }>("/chat/", {

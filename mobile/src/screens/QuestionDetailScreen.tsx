@@ -1,13 +1,14 @@
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useRef } from "react";
 import {
   View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { ChevronLeft, Mic, Sparkles } from "lucide-react-native";
+import { ChevronLeft, Mic, Sparkles, ChevronDown, ChevronRight, Check } from "lucide-react-native";
 import { useNavigation, useRoute, useFocusEffect } from "@react-navigation/native";
 import { useRole } from "../context/RoleContext";
-import { fetchQuestions, Question } from "../api/questions";
+import { fetchQuestions, Question, Answer } from "../api/questions";
 import { listPracticesForQuestion, Practice } from "../api/practices";
+import ChatSheet, { ChatSheetRef } from "../components/ChatSheet";
 import { colors, spacing, fontSize, fontWeight, radius } from "../theme";
 
 // Helper: HTML tags from TipTap answer content are stripped for plain display.
@@ -35,10 +36,33 @@ export default function QuestionDetailScreen() {
   const route = useRoute<any>();
   const { activeRole } = useRole();
   const questionId: string = route.params?.questionId;
+  // Position key flows in from the screen that opened us — defaults to "general".
+  // Without this, questions tied to a specific position wouldn't be found.
+  const positionKey: string = route.params?.positionKey || "general";
 
   const [question, setQuestion] = useState<Question | null>(null);
   const [practices, setPractices] = useState<Practice[]>([]);
   const [loading, setLoading] = useState(true);
+  // Section collapse state — default both expanded for first visit.
+  const [answersOpen, setAnswersOpen] = useState(true);
+  const [practicesOpen, setPracticesOpen] = useState(true);
+  // Chat selection — mutually exclusive answer/practice focus for Bloom.
+  // Tap a card to select; the ChatSheet displays a banner with the choice.
+  const [selectedAnswerId, setSelectedAnswerId] = useState<string | null>(null);
+  const [selectedPracticeId, setSelectedPracticeId] = useState<string | null>(null);
+  const chatRef = useRef<ChatSheetRef>(null);
+
+  const selectAnswer = (a: Answer) => {
+    setSelectedAnswerId((cur) => (cur === a.id ? null : a.id));
+    setSelectedPracticeId(null);
+  };
+  const selectPractice = (p: Practice) => {
+    setSelectedPracticeId((cur) => (cur === p.id ? null : p.id));
+    setSelectedAnswerId(null);
+  };
+
+  const selectedAnswer = question?.answers.find((a) => a.id === selectedAnswerId) || null;
+  const selectedPractice = practices.find((p) => p.id === selectedPracticeId) || null;
 
   // The desktop GET /questions/ returns the whole list with answers embedded.
   // No per-question detail endpoint — we just refetch the role's questions
@@ -49,7 +73,7 @@ export default function QuestionDetailScreen() {
     setLoading(true);
     try {
       const [list, p] = await Promise.all([
-        fetchQuestions(activeRole.id, null, "general"),
+        fetchQuestions(activeRole.id, null, positionKey),
         listPracticesForQuestion(questionId).catch(() => [] as Practice[]),
       ]);
       setQuestion(list.find((q) => q.id === questionId) || null);
@@ -60,7 +84,7 @@ export default function QuestionDetailScreen() {
     } finally {
       setLoading(false);
     }
-  }, [activeRole?.id, questionId]);
+  }, [activeRole?.id, questionId, positionKey]);
 
   // Re-fetch whenever the screen comes back into focus — so a new practice
   // saved from the recorder shows up when the user pops back here.
@@ -115,65 +139,118 @@ export default function QuestionDetailScreen() {
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.chatButton, { flex: 1 }]}
-            onPress={() =>
-              navigation.navigate("AIChat", {
-                questionId: question.id,
-                questionText: question.text,
-              })
-            }
+            onPress={() => chatRef.current?.present()}
           >
             <Sparkles color={colors.orange} size={16} />
             <Text style={styles.chatText}>Ask Bloom</Text>
           </TouchableOpacity>
         </View>
 
-        <View style={styles.sectionHeader}>
+        <TouchableOpacity
+          onPress={() => setAnswersOpen((v) => !v)}
+          style={styles.sectionHeader}
+          activeOpacity={0.6}
+        >
+          {answersOpen ? (
+            <ChevronDown size={16} color={colors.textMuted} />
+          ) : (
+            <ChevronRight size={16} color={colors.textMuted} />
+          )}
           <Text style={styles.sectionTitle}>
             Saved answers ({question.answers?.length || 0})
           </Text>
-        </View>
+        </TouchableOpacity>
 
-        {question.answers?.length === 0 ? (
-          <Text style={styles.emptyInline}>
-            No saved answers yet. Draft answers on desktop.
-          </Text>
-        ) : (
-          question.answers.map((a) => (
-            <View key={a.id} style={styles.answerCard}>
-              <Text style={styles.answerLabel}>{a.label}</Text>
-              <Text style={styles.answerBody} numberOfLines={6}>
-                {stripHtml(a.content)}
-              </Text>
-            </View>
-          ))
+        {answersOpen && (
+          question.answers?.length === 0 ? (
+            <Text style={styles.emptyInline}>
+              No saved answers yet. Draft answers on desktop.
+            </Text>
+          ) : (
+            question.answers.map((a) => {
+              const selected = selectedAnswerId === a.id;
+              return (
+                <TouchableOpacity
+                  key={a.id}
+                  style={[styles.answerCard, selected && styles.cardSelected]}
+                  onPress={() => selectAnswer(a)}
+                  activeOpacity={0.7}
+                >
+                  <View style={styles.cardHeader}>
+                    <Text style={styles.answerLabel}>{a.label}</Text>
+                    {selected && <Check size={14} color={colors.orange} />}
+                  </View>
+                  <Text style={styles.answerBody} numberOfLines={6}>
+                    {stripHtml(a.content)}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })
+          )
         )}
 
-        <View style={styles.sectionHeader}>
+        <TouchableOpacity
+          onPress={() => setPracticesOpen((v) => !v)}
+          style={styles.sectionHeader}
+          activeOpacity={0.6}
+        >
+          {practicesOpen ? (
+            <ChevronDown size={16} color={colors.textMuted} />
+          ) : (
+            <ChevronRight size={16} color={colors.textMuted} />
+          )}
           <Text style={styles.sectionTitle}>
             Practice attempts ({practices.length})
           </Text>
-        </View>
+        </TouchableOpacity>
 
-        {practices.length === 0 ? (
-          <Text style={styles.emptyInline}>
-            No practice attempts yet. Tap "Practice" above to record one.
-          </Text>
-        ) : (
-          practices.map((p) => (
-            <View key={p.id} style={styles.practiceCard}>
-              <View style={styles.practiceCardHeader}>
-                <Text style={styles.practiceCardTag} numberOfLines={1}>{p.tag}</Text>
-                <Text style={styles.practiceCardMeta}>
-                  {formatDuration(p.duration)} · {formatRelativeTime(p.created_at)}
-                </Text>
-              </View>
-              <Text style={styles.practiceCardBody} numberOfLines={4}>
-                {p.transcript || "(no transcript)"}
-              </Text>
-            </View>
-          ))
+        {practicesOpen && (
+          practices.length === 0 ? (
+            <Text style={styles.emptyInline}>
+              No practice attempts yet. Tap "Practice" above to record one.
+            </Text>
+          ) : (
+            practices.map((p) => {
+              const selected = selectedPracticeId === p.id;
+              return (
+                <TouchableOpacity
+                  key={p.id}
+                  style={[styles.practiceCard, selected && styles.cardSelected]}
+                  onPress={() => selectPractice(p)}
+                  activeOpacity={0.7}
+                >
+                  <View style={styles.practiceCardHeader}>
+                    <Text style={styles.practiceCardTag} numberOfLines={1}>{p.tag}</Text>
+                    {selected ? (
+                      <Check size={14} color={colors.orange} />
+                    ) : (
+                      <Text style={styles.practiceCardMeta}>
+                        {formatDuration(p.duration)} · {formatRelativeTime(p.created_at)}
+                      </Text>
+                    )}
+                  </View>
+                  <Text style={styles.practiceCardBody} numberOfLines={4}>
+                    {p.transcript || "(no transcript)"}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })
+          )
         )}
       </ScrollView>
+
+      <ChatSheet
+        ref={chatRef}
+        ctx={{
+          kind: "question",
+          questionId: question.id,
+          questionText: question.text,
+          selectedAnswerId: selectedAnswer?.id,
+          selectedAnswerLabel: selectedAnswer?.label,
+          selectedPracticeId: selectedPractice?.id,
+          selectedPracticeTag: selectedPractice?.tag,
+        }}
+      />
     </SafeAreaView>
   );
 }
@@ -222,7 +299,13 @@ const styles = StyleSheet.create({
     borderRadius: radius.lg,
   },
   chatText: { color: colors.orange, fontSize: fontSize.sm, fontWeight: fontWeight.semibold },
-  sectionHeader: { marginBottom: spacing.sm },
+  sectionHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.xs,
+    marginTop: spacing.md,
+    marginBottom: spacing.sm,
+  },
   sectionTitle: {
     fontSize: fontSize.sm,
     color: colors.textMuted,
@@ -234,6 +317,18 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     borderRadius: radius.md,
     marginBottom: spacing.sm,
+    borderWidth: 1,
+    borderColor: "transparent",
+  },
+  cardSelected: {
+    backgroundColor: colors.orangeLight,
+    borderColor: colors.orangeBorder,
+  },
+  cardHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: spacing.xs,
   },
   answerLabel: {
     fontSize: fontSize.sm,
@@ -247,6 +342,8 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     borderRadius: radius.md,
     marginBottom: spacing.sm,
+    borderWidth: 1,
+    borderColor: "transparent",
   },
   practiceCardHeader: {
     flexDirection: "row",
