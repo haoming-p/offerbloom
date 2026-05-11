@@ -1,5 +1,5 @@
 import { useState, useRef } from "react";
-import { LuChevronLeft, LuChevronRight, LuPencil, LuPanelLeftClose, LuPanelLeftOpen, LuRotateCw, LuHistory } from "react-icons/lu";
+import { LuChevronLeft, LuChevronRight, LuPencil, LuPanelLeftClose, LuPanelLeftOpen, LuRotateCw, LuHistory, LuSparkles } from "react-icons/lu";
 import AnswersPanel from "./AnswersPanel";
 import PracticePanel from "./PracticePanel";
 import AIAssistantPanel from "./AIAssistantPanel";
@@ -7,7 +7,19 @@ import { updateQuestion as updateQuestionApi } from "../../services/questions";
 
 // Reusable column wrapper: header (title + optional extra actions + collapse button),
 // body slot, collapsed strip. extraActions render between the title and the collapse btn.
-const Column = ({ title, Icon, collapsed, onToggle, children, expandedClass = "flex-1", extraActions = null }) => {
+// `expandedHeader` — when set, replaces the default icon+title block in the
+// expanded header. Used by the AI column to render a richer "Bloom · Prep AI
+// + tagline" block while other columns keep the simple icon+title.
+const Column = ({
+  title,
+  Icon,
+  collapsed,
+  onToggle,
+  children,
+  expandedClass = "flex-1",
+  extraActions = null,
+  expandedHeader = null,
+}) => {
   if (collapsed) {
     return (
       <button
@@ -25,10 +37,12 @@ const Column = ({ title, Icon, collapsed, onToggle, children, expandedClass = "f
   return (
     <div className={`${expandedClass} flex flex-col min-w-0 border-r border-gray-200 last:border-r-0`}>
       <div className="flex items-center justify-between px-4 py-2 border-b border-gray-200 bg-gray-50">
-        <div className="flex items-center gap-2 text-sm font-semibold text-gray-700">
-          <Icon size={14} className="text-gray-500" />
-          {title}
-        </div>
+        {expandedHeader || (
+          <div className="flex items-center gap-2 text-sm font-semibold text-gray-700">
+            <Icon size={14} className="text-gray-500" />
+            {title}
+          </div>
+        )}
         <div className="flex items-center gap-1">
           {extraActions}
           <button
@@ -48,6 +62,7 @@ const Column = ({ title, Icon, collapsed, onToggle, children, expandedClass = "f
 const QuestionDetailPage = ({
   question,
   questions,
+  roleId,
   onUpdateAnswers,
   onAddAnswer,
   onUpdateAnswer,
@@ -226,6 +241,15 @@ const QuestionDetailPage = ({
           Icon={AIAssistantPanel.Icon}
           collapsed={aiCollapsed}
           onToggle={() => setAiCollapsed((v) => !v)}
+          expandedHeader={
+            <div className="flex items-center gap-2 text-sm text-gray-700">
+              <LuSparkles size={14} className="text-gray-500" />
+              <span>
+                <strong className="font-bold text-gray-800">Bloom</strong>
+                <span className="text-gray-400"> · Prep AI</span>
+              </span>
+            </div>
+          }
           extraActions={
             <>
               <button
@@ -248,6 +272,7 @@ const QuestionDetailPage = ({
           <AIAssistantPanel
             ref={aiPanelRef}
             question={question}
+            roleId={roleId}
             selectedAnswer={selectedAnswer}
             selectedPractice={selectedPractice}
             onClearSelection={() => {

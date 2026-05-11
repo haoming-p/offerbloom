@@ -96,6 +96,51 @@ def load_user_preferences(
     return header + body + "\n=== END USER PREFERENCES ==="
 
 
+# Story corpus sizing — same per-item budget as Answers so a story-heavy user
+# doesn't blow out the prompt.
+MAX_STORY_CHARS = 1500
+MAX_STORIES_INCLUDED = 10
+
+
+def load_user_stories(db: Session, user_id: str, role_id: str | None = None) -> str:
+    """Return the user's saved stories as a prompt block, or '' if none.
+
+    Stories are reusable narratives. Universal stories (role_id null/empty)
+    apply to every chat. Role-tagged stories only surface when prepping that
+    role, so a "system-design migration" SDE story doesn't bleed into a PM chat.
+    """
+    result = db.run(
+        """
+        MATCH (u:User {id: $user_id})-[:HAS_STORY]->(s:Story)
+        WHERE s.role_id IS NULL OR s.role_id = '' OR s.role_id = $role_id
+        RETURN s.title AS title, s.content AS content
+        ORDER BY s.updated_at DESC
+        LIMIT $limit
+        """,
+        user_id=user_id,
+        role_id=role_id or "",
+        limit=MAX_STORIES_INCLUDED,
+    )
+    rows = result.data()
+    if not rows:
+        return ""
+
+    parts = [
+        "=== SAVED STORIES (the user's reusable experiences) ===",
+        "Draw from these stories when an interview question naturally maps to one. "
+        "Do not invent details beyond what's written.",
+    ]
+    for row in rows:
+        title = (row.get("title") or "").strip() or "(untitled)"
+        content = _strip_html((row.get("content") or ""))[:MAX_STORY_CHARS]
+        if not content:
+            continue
+        parts.append(f"  — {title}: {content}")
+    if len(parts) <= 2:
+        return ""
+    return "\n".join(parts) + "\n=== END SAVED STORIES ==="
+
+
 def build_rag_context(
     db: Session,
     user_id: str,

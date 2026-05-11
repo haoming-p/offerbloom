@@ -1,10 +1,10 @@
-import { LuHouse, LuClipboardList, LuBriefcase, LuFolder, LuUser, LuChevronsLeft, LuChevronsRight } from "react-icons/lu";
+import { LuHouse, LuClipboardList, LuBriefcase, LuLibrary, LuUser, LuChevronsLeft, LuChevronsRight } from "react-icons/lu";
 
 const TABS = [
   { id: "dashboard", label: "Dashboard", Icon: LuHouse },
   { id: "prep", label: "My Prep", Icon: LuClipboardList },
   { id: "positions", label: "My Positions", Icon: LuBriefcase },
-  { id: "files", label: "My Files", Icon: LuFolder },
+  { id: "library", label: "My Library", Icon: LuLibrary },
   { id: "me", label: "Me", Icon: LuUser },
 ];
 
@@ -43,7 +43,7 @@ const SideBar = ({ activeTab, onTabChange, isDemoGuest, collapsed, onToggleColla
       )}
 
       {/* Tab buttons */}
-      <nav className="flex flex-col gap-0.5 px-3">
+      <nav className="flex flex-col gap-1.5 px-3">
         {TABS.map(({ id, label, Icon }) => {
           const isActive = activeTab === id;
           return (
@@ -51,7 +51,7 @@ const SideBar = ({ activeTab, onTabChange, isDemoGuest, collapsed, onToggleColla
               key={id}
               onClick={() => onTabChange(id)}
               title={collapsed ? label : undefined}
-              className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm cursor-pointer transition-colors text-left ${
+              className={`flex items-center gap-3 px-3 py-3 rounded-lg text-sm cursor-pointer transition-colors text-left ${
                 isActive
                   ? "bg-white text-gray-900 font-medium shadow-sm"
                   : "text-gray-500 hover:text-gray-800 hover:bg-white/60"

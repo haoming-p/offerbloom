@@ -421,7 +421,7 @@ const PrepPage = ({ data, user, defaultRoleId, onUpdateCategories }) => {
         </h1>
         <p className="text-sm text-gray-400">
           {isDemoGuest
-            ? "Pick a role and category — questions cloned from the demo source are ready to explore."
+            ? "Your updates clear in 24h. Save to account to keep them."
             : "Pick a role on the left, then a category to start practicing."}
         </p>
       </div>
@@ -491,6 +491,7 @@ const PrepPage = ({ data, user, defaultRoleId, onUpdateCategories }) => {
             <QuestionDetailPage
               question={activeQuestion}
               questions={currentQuestions}
+              roleId={activeRoleId}
               onUpdateAnswers={handleUpdateAnswers}
               onAddAnswer={(label, content) => handleAddAnswer(activeQuestion.id, label, content)}
               onUpdateAnswer={(answerId, label, content) =>

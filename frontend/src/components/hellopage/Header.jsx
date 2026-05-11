@@ -1,6 +1,6 @@
 import bloomLogo from "../../assets/bloom.png";
 
-const Header = ({ onSignIn, onSignUp, onOpenResources }) => {
+const Header = ({ onSignIn, onSignUp }) => {
   function scrollTo(id) {
     document.getElementById(id)?.scrollIntoView({ behavior: "smooth" });
   }
@@ -14,7 +14,6 @@ const Header = ({ onSignIn, onSignUp, onOpenResources }) => {
         </div>
         <nav className="flex items-center gap-8 text-sm text-gray-600">
           <button onClick={() => scrollTo("multi-role-section")} className="hover:text-gray-900 cursor-pointer">Features</button>
-          <button onClick={onOpenResources} className="hover:text-gray-900 cursor-pointer">Resources</button>
           <button onClick={() => scrollTo("faq-section")} className="hover:text-gray-900 cursor-pointer">FAQ</button>
         </nav>
         <div className="flex items-center gap-3">

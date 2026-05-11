@@ -12,7 +12,7 @@ from config import settings
 from auth.jwt import decode_token
 from database import get_db
 from storage import download_file
-from services.rag_context import build_rag_context, load_user_preferences
+from services.rag_context import build_rag_context, load_user_preferences, load_user_stories
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 bearer = HTTPBearer()
@@ -291,6 +291,16 @@ def chat(
             system += "\n\n" + pref_block
     except Exception as e:
         print(f"[chat] preference load failed for user={user_id}: {e}")
+
+    # Saved stories — only useful for prep (drafting answers). File review and
+    # general chats don't benefit from the user's interview narratives.
+    if body.context == "answer_draft":
+        try:
+            story_block = load_user_stories(db, user_id, chat_role_id)
+            if story_block:
+                system += "\n\n" + story_block
+        except Exception as e:
+            print(f"[chat] story load failed for user={user_id}: {e}")
 
     messages = [{"role": m.role, "content": m.content} for m in body.history]
 

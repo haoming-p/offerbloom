@@ -65,10 +65,10 @@ const PrepNavigator = ({
           const isOpen = expanded[role.id];
 
           return (
-            <div key={role.id} className="mb-1">
+            <div key={role.id} className="mb-2">
               <button
                 onClick={() => toggle(role.id)}
-                className="w-full flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-white/60 cursor-pointer"
+                className="w-full flex items-center gap-2 px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-white/60 cursor-pointer"
               >
                 {isOpen ? (
                   <LuChevronDown size={14} className="text-gray-400 flex-shrink-0" />
@@ -89,7 +89,7 @@ const PrepNavigator = ({
                       <button
                         key={posKey}
                         onClick={() => onSelect(role.id, posKey)}
-                        className={`flex items-center gap-2 pl-10 pr-4 py-1.5 text-sm cursor-pointer text-left transition-colors ${
+                        className={`flex items-center gap-2 pl-10 pr-4 py-2 text-sm cursor-pointer text-left transition-colors ${
                           isActive
                             ? "bg-orange-50 text-orange-600 font-medium border-l-2 border-orange-400 -ml-px"
                             : "text-gray-500 hover:bg-white/60 hover:text-gray-800"

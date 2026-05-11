@@ -3,7 +3,7 @@ import TopBar from "../components/homepage/TopBar";
 import SideBar from "../components/homepage/SideBar";
 import DashboardPage from "./DashboardPage";
 import PositionsPage from "./PositionsPage";
-import FilesPage from "./FilesPage";
+import LibraryPage from "./LibraryPage";
 import PrepPage from "./PrepPage";
 import MePage from "./MePage";
 import SaveToAccountModal from "../components/homepage/SaveToAccountModal";
@@ -11,7 +11,15 @@ import ResetDemoModal from "../components/homepage/ResetDemoModal";
 import { resetDemo } from "../services/demo";
 import { saveToken } from "../services/auth";
 
-const HomePage = ({ data, user, onLogout, onUpdatePositionsData, onUpdateCategories, onOpenResources }) => {
+const HomePage = ({
+  data,
+  user,
+  onLogout,
+  onUpdatePositionsData,
+  onUpdateCategories,
+  onDeleteRole,
+  onDeletePosition,
+}) => {
   // Which sidebar tab is active. Persisted to localStorage so a browser refresh
   // doesn't kick the user back to Dashboard every time.
   const [activeTab, setActiveTab] = useState(
@@ -21,9 +29,6 @@ const HomePage = ({ data, user, onLogout, onUpdatePositionsData, onUpdateCategor
     localStorage.setItem("activeTab", activeTab);
   }, [activeTab]);
   const [prepDefaultRole, setPrepDefaultRole] = useState(null);
-
-  // Toggle between real dashboard and raw JSON data view
-  const [showDebug, setShowDebug] = useState(false);
 
   // Sidebar collapse state — default expanded
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -49,28 +54,30 @@ const HomePage = ({ data, user, onLogout, onUpdatePositionsData, onUpdateCategor
 
   // Render the active tab's content
   const renderTab = () => {
-    // Debug mode — show raw data for teammate review
-    if (showDebug) {
-      return (
-        <div className="p-8">
-          <h2 className="text-lg font-bold text-gray-800 mb-4">
-            📦 Onboarding Data (Debug)
-          </h2>
-          <pre className="text-xs text-gray-500 bg-gray-50 rounded-xl p-6 overflow-auto max-h-[70vh]">
-            {JSON.stringify(data, null, 2)}
-          </pre>
-        </div>
-      );
-    }
-
-    // Normal tab rendering
     switch (activeTab) {
       case "dashboard":
-        return <DashboardPage data={data} user={user} onNavigateToPrep={(roleId) => { setPrepDefaultRole(roleId); setActiveTab("prep"); }} />;
+        return (
+          <DashboardPage
+            data={data}
+            user={user}
+            onNavigateToPrep={(roleId) => { setPrepDefaultRole(roleId); setActiveTab("prep"); }}
+            onUpdatePositionsData={onUpdatePositionsData}
+            onDeleteRole={onDeleteRole}
+            onDeletePosition={onDeletePosition}
+          />
+        );
       case "positions":
-        return <PositionsPage data={data} onUpdatePositionsData={onUpdatePositionsData} />;
-      case "files":
-        return <FilesPage data={data} />;
+        return (
+          <PositionsPage
+            data={data}
+            user={user}
+            onUpdatePositionsData={onUpdatePositionsData}
+            onDeleteRole={onDeleteRole}
+            onDeletePosition={onDeletePosition}
+          />
+        );
+      case "library":
+        return <LibraryPage data={data} user={user} />;
       case "prep":
         return (
           <PrepPage
@@ -96,13 +103,8 @@ const HomePage = ({ data, user, onLogout, onUpdatePositionsData, onUpdateCategor
       {/* Top Bar */}
       <TopBar
         user={user}
-        roles={data?.roles || []}
-        showDebug={showDebug}
-        onToggleDebug={() => setShowDebug(!showDebug)}
         onLogoClick={() => setActiveTab("dashboard")}
-        onNavClick={(target) => {
-          if (target === "resources") onOpenResources?.();
-        }}
+        onAvatarClick={() => setActiveTab("me")}
         isDemoGuest={user?.is_demo_guest}
         onResetDemo={() => setShowResetModal(true)}
         onSaveToAccount={() => setShowSaveModal(true)}

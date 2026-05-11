@@ -10,7 +10,7 @@ import TechStackSection from "../components/hellopage/TechStackSection";
 import FAQSection from "../components/hellopage/FAQSection";
 import Footer from "../components/hellopage/Footer";
 
-const HelloPage = ({ onAuthSuccess, onTryDemo, onOpenResources }) => {
+const HelloPage = ({ onAuthSuccess, onTryDemo }) => {
   // onTryDemo is wired through to Hero so visitors can launch the demo from the landing page
   const [showModal, setShowModal] = useState(null); // null | "signin" | "signup"
   const [form, setForm] = useState({ name: "", email: "", password: "" });
@@ -51,7 +51,6 @@ const HelloPage = ({ onAuthSuccess, onTryDemo, onOpenResources }) => {
           onSignIn={() => openModal("signin")}
           onSignUp={() => openModal("signup")}
           onTryDemo={onTryDemo}
-          onOpenResources={onOpenResources}
         />
         <MultiRoleSection />
         <KnowledgeBaseSection />
