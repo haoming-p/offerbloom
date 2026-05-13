@@ -3,7 +3,9 @@ import PrepNavigator from "../components/preppage/PrepNavigator";
 import PrepCategoryTabs, { ALL_CATEGORY_ID } from "../components/preppage/PrepCategoryTabs";
 import PrepTable from "../components/preppage/PrepTable";
 import QuestionDetailPage from "../components/preppage/QuestionDetailPage";
+import PreloadPicker from "../components/preppage/PreloadPicker";
 import { fetchQuestions, addQuestion, deleteQuestion, updateQuestion, reorderQuestions } from "../services/questions";
+import { fetchPublicCategories } from "../services/publicMeta";
 import { addAnswer, updateAnswer, deleteAnswer } from "../services/answers";
 import { addPractice, deletePractice } from "../services/practices";
 
@@ -20,13 +22,21 @@ const DEFAULT_CATEGORIES_BY_ROLE = {
     { id: "bq",            label: "BQ" },
     { id: "algorithm",     label: "Algorithm" },
     { id: "system_design", label: "System Design" },
+    { id: "frontend",      label: "Frontend" },
   ],
   pjm: [
     { id: "bq",            label: "BQ" },
   ],
+  ds: [
+    { id: "ml_theory",     label: "ML Theory" },
+    { id: "nlp",           label: "NLP" },
+  ],
 };
 
-const defaultsForRole = (roleId) => DEFAULT_CATEGORIES_BY_ROLE[roleId] || [];
+// Per-role defaults win; otherwise fall back to the public category pool
+// (Kaggle tag set: adaptability, leadership, …). Empty array only if neither.
+const defaultsForRole = (roleId, publicCategories = []) =>
+  DEFAULT_CATEGORIES_BY_ROLE[roleId] || publicCategories || [];
 
 const makeKey = (roleId, posKey, catId) => `${roleId}-${posKey}-${catId}`;
 
@@ -76,6 +86,9 @@ const PrepPage = ({ data, user, defaultRoleId, onUpdateCategories }) => {
   // --- Roles & Positions sidebar collapse ---
   const [navCollapsed, setNavCollapsed] = useState(false);
 
+  // --- Preload picker modal ---
+  const [showPreloadPicker, setShowPreloadPicker] = useState(false);
+
   // --- Categories per role: load saved or fall back to shared seeded set.
   const [categories, setCategories] = useState(() => {
     const initial = {};
@@ -112,6 +125,38 @@ const PrepPage = ({ data, user, defaultRoleId, onUpdateCategories }) => {
 
   // --- Questions cached by composite key ---
   const [questions, setQuestions] = useState({});
+
+  // --- Public category pool (Kaggle tags) — used as fallback when a role
+  // has no entry in DEFAULT_CATEGORIES_BY_ROLE. Lets ux/ds/devops/etc.
+  // show the standard tag chips out of the box.
+  const [publicCategories, setPublicCategories] = useState([]);
+  useEffect(() => {
+    let cancelled = false;
+    fetchPublicCategories()
+      .then((cats) => { if (!cancelled) setPublicCategories(cats); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
+  // When publicCategories arrive, backfill any role that's still on an empty
+  // default list (no saved, no hardcoded). Roles already populated stay.
+  useEffect(() => {
+    if (!publicCategories.length) return;
+    setCategories((prev) => {
+      const next = { ...prev };
+      let changed = false;
+      roles.forEach((role) => {
+        if (DEFAULT_CATEGORIES_BY_ROLE[role.id]) return;
+        const saved = savedCategories[role.id];
+        if (Array.isArray(saved) && saved.length) return;
+        if (!next[role.id] || next[role.id].length === 0) {
+          next[role.id] = publicCategories;
+          changed = true;
+        }
+      });
+      return changed ? next : prev;
+    });
+  }, [publicCategories, roles, savedCategories]);
 
   // ============================================================
   // Derived
@@ -383,6 +428,35 @@ const PrepPage = ({ data, user, defaultRoleId, onUpdateCategories }) => {
 
   const handleOpenDetail = (questionId) => setCurrentView({ page: "detail", questionId });
 
+  // After preload picker copies questions: invalidate caches for the target
+  // (role, position) so a fresh fetch hydrates the new rows, then navigate
+  // there if the user picked a different position.
+  const handlePreloadCopied = (created) => {
+    if (!created || created.length === 0) return;
+    const targetPos = created[0].position_key || "general";
+    setQuestions((prev) => {
+      const next = { ...prev };
+      const prefix = `${activeRoleId}-${targetPos}-`;
+      for (const k of Object.keys(next)) {
+        if (k.startsWith(prefix)) delete next[k];
+      }
+      return next;
+    });
+    setLoadedKeys((prev) => {
+      const next = new Set(prev);
+      const prefix = `${activeRoleId}-${targetPos}-`;
+      for (const k of Array.from(next)) {
+        if (k.startsWith(prefix)) next.delete(k);
+      }
+      return next;
+    });
+    if (targetPos !== activePositionKey) {
+      setActivePositionKey(targetPos);
+    }
+    setActiveCategoryId(ALL_CATEGORY_ID);
+    setCurrentView("table");
+  };
+
   // Inline question text update — backend persisted by QuestionDetailPage; we just patch local cache.
   const handleUpdateQuestionText = (questionId, newText) => {
     setQuestions((prev) => {
@@ -484,6 +558,7 @@ const PrepPage = ({ data, user, defaultRoleId, onUpdateCategories }) => {
                   onDeleteQuestion={handleDeleteQuestion}
                   onUpdateQuestionText={handleSaveQuestionEdit}
                   onOpenDetail={handleOpenDetail}
+                  onOpenPreloadPicker={activeRoleId ? () => setShowPreloadPicker(true) : undefined}
                 />
               </div>
             </>
@@ -527,6 +602,19 @@ const PrepPage = ({ data, user, defaultRoleId, onUpdateCategories }) => {
           )}
         </div>
       </div>
+
+      {showPreloadPicker && activeRoleId && (
+        <PreloadPicker
+          roleId={activeRoleId}
+          roleLabel={activeRole?.label}
+          positions={positions.filter((p) => p.role === activeRoleId)}
+          defaultPositionKey={activePositionKey}
+          categories={roleCats}
+          initialCategoryId={activeCategoryId === ALL_CATEGORY_ID ? null : activeCategoryId}
+          onClose={() => setShowPreloadPicker(false)}
+          onCopied={handlePreloadCopied}
+        />
+      )}
     </div>
   );
 };

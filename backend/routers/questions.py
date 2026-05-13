@@ -2,6 +2,7 @@ import uuid
 from fastapi import APIRouter, HTTPException, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from neo4j import Session
+from pydantic import BaseModel
 
 from database import get_db
 from models.question import QuestionOut, QuestionCreate, QuestionUpdate
@@ -16,9 +17,24 @@ bearer = HTTPBearer()
 # in sync with DEFAULT_CATEGORIES_BY_ROLE in frontend/.../PrepTab.jsx.
 DEFAULT_CATEGORIES_BY_ROLE: dict[str, list[str]] = {
     "pm": ["bq", "product_sense", "general"],
-    "sde": ["bq", "algorithm", "system_design"],
+    "sde": ["bq", "algorithm", "system_design", "frontend"],
     "pjm": ["bq"],
+    "ds": ["ml_theory", "nlp"],
 }
+
+
+# Onboarding role ids → PreloadedQuestion pool role ids (Kaggle seed).
+# User-facing role ids stay unchanged; this only normalizes the lookup
+# against the curated pool. Roles without an alias query the pool by their
+# own id (matches when names already agree, e.g. pm/sde/ds).
+ROLE_ALIAS: dict[str, str] = {
+    "uiux": "ux",
+    "pjm": "pm",
+}
+
+
+def _pool_role_id(role_id: str) -> str:
+    return ROLE_ALIAS.get(role_id, role_id)
 
 
 # Default questions seeded for each role+category combo on first access
@@ -281,6 +297,148 @@ def list_questions(
     ]
 
 
+@router.get("/preloaded")
+def list_preloaded_questions(
+    role_id: str,
+    category_id: str | None = None,
+    difficulty: str | None = None,
+    limit: int = 100,
+    credentials: HTTPAuthorizationCredentials = Depends(bearer),
+    db: Session = Depends(get_db),
+):
+    """Auth'd read of PreloadedQuestion pool for the picker UI."""
+    _get_current_user_id(credentials)
+
+    conditions = ["q.role_id = $role_id"]
+    params: dict = {"role_id": _pool_role_id(role_id), "limit": limit}
+    if category_id:
+        conditions.append("q.category_id = $category_id")
+        params["category_id"] = category_id
+    if difficulty:
+        conditions.append("q.difficulty = $difficulty")
+        params["difficulty"] = difficulty
+
+    where = "WHERE " + " AND ".join(conditions)
+    cypher = (
+        f"MATCH (q:PreloadedQuestion) {where} "
+        "RETURN q ORDER BY q.category_id ASC, q.difficulty ASC LIMIT $limit"
+    )
+    result = db.run(cypher, **params)
+    return [
+        {
+            "id":           r["q"]["id"],
+            "text":         r["q"]["text"],
+            "role_id":      r["q"]["role_id"],
+            "category_id":  r["q"]["category_id"],
+            "difficulty":   r["q"].get("difficulty", ""),
+            "experience":   r["q"].get("experience", ""),
+            "ideal_answer": r["q"].get("ideal_answer", ""),
+        }
+        for r in result.data()
+    ]
+
+
+class CopyPreloadedRequest(BaseModel):
+    preloaded_ids: list[str]
+    role_id: str
+    position_key: str = "general"
+    category_id_override: str | None = None
+
+
+@router.post("/preloaded/copy", response_model=list[QuestionOut], status_code=201)
+def copy_preloaded_questions(
+    body: CopyPreloadedRequest,
+    credentials: HTTPAuthorizationCredentials = Depends(bearer),
+    db: Session = Depends(get_db),
+):
+    """Bulk-copy PreloadedQuestion nodes into user-owned Question nodes at the
+    chosen position. Single UNWIND transaction for write efficiency."""
+    user_id = _get_current_user_id(credentials)
+
+    if not body.preloaded_ids:
+        return []
+
+    source = db.run(
+        """
+        MATCH (q:PreloadedQuestion)
+        WHERE q.id IN $ids AND q.role_id = $role_id
+        RETURN q
+        """,
+        ids=body.preloaded_ids,
+        role_id=_pool_role_id(body.role_id),
+    ).data()
+
+    if not source:
+        return []
+
+    rows = []
+    for r in source:
+        pq = r["q"]
+        rows.append({
+            "id":           str(uuid.uuid4()),
+            "text":         pq["text"],
+            "category_id":  body.category_id_override or pq["category_id"],
+            "difficulty":   pq.get("difficulty", ""),
+            "experience":   pq.get("experience", ""),
+            "ideal_answer": pq.get("ideal_answer", ""),
+        })
+
+    # Shift existing orders down so new rows land at the top, grouped by category.
+    db.run(
+        """
+        MATCH (u:User {id: $user_id})-[:HAS_QUESTION]->(q:Question {
+            role_id: $role_id,
+            position_key: $position_key
+        })
+        WHERE q.category_id IN $cats
+        SET q.order = q.order + $shift
+        """,
+        user_id=user_id,
+        role_id=body.role_id,
+        position_key=body.position_key,
+        cats=list({r["category_id"] for r in rows}),
+        shift=len(rows),
+    )
+
+    db.run(
+        """
+        MATCH (u:User {id: $user_id})
+        UNWIND $rows AS row
+        CREATE (q:Question {
+            id: row.id,
+            text: row.text,
+            role_id: $role_id,
+            category_id: row.category_id,
+            position_key: $position_key,
+            order: 0,
+            difficulty: row.difficulty,
+            experience: row.experience,
+            ideal_answer: row.ideal_answer
+        })
+        CREATE (u)-[:HAS_QUESTION]->(q)
+        """,
+        user_id=user_id,
+        role_id=body.role_id,
+        position_key=body.position_key,
+        rows=rows,
+    )
+
+    return [
+        QuestionOut(
+            id=r["id"],
+            text=r["text"],
+            role_id=body.role_id,
+            category_id=r["category_id"],
+            position_key=body.position_key,
+            order=0,
+            difficulty=r["difficulty"],
+            experience=r["experience"],
+            ideal_answer=r["ideal_answer"],
+        )
+        for r in rows
+    ]
+
+
 @router.post("/", response_model=QuestionOut, status_code=201)
 def create_question(
     data: QuestionCreate,
@@ -372,9 +530,6 @@ def update_question(
         experience=q.get("experience", ""),
         ideal_answer=q.get("ideal_answer", ""),
     )
-
-
-from pydantic import BaseModel
 
 
 class ReorderRequest(BaseModel):
