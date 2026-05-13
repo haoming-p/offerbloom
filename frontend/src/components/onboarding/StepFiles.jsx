@@ -27,6 +27,9 @@ const StepFiles = ({ roles, positions, files, onUpdateFiles }) => {
 
     setUploading(true);
     const uploaded = [];
+    // When the user has only ONE possible target, auto-link uploads to it.
+    // They can still untick the chip if they don't want the link.
+    const autoLinkId = linkTargets.length === 1 ? linkTargets[0].id : null;
     for (const file of selected) {
       try {
         const result = await uploadFile(file, guessFileType(file.name));
@@ -36,7 +39,7 @@ const StepFiles = ({ roles, positions, files, onUpdateFiles }) => {
           file_type: result.file_type,
           size: result.size,
           url: result.url,
-          linkedTo: [],
+          linkedTo: autoLinkId ? [autoLinkId] : [],
         });
       } catch {
         // Skip files that fail to upload
