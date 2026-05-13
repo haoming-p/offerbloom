@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useRef } from "react";
-import { LuSearch, LuPencil } from "react-icons/lu";
+import { LuSearch, LuPencil, LuDownload } from "react-icons/lu";
 import {
   useReactTable,
   getCoreRowModel,
@@ -96,6 +96,7 @@ const PrepTable = ({
   categoryLabelById = {},
   showTagPicker = false,        // when true, add row reveals a tag dropdown after typing (All view)
   availableCategories = [],     // [{ id, label }] for the tag dropdown
+  onOpenPreloadPicker,          // () => void — opens the curated-pool picker
 }) => {
   // Inline question edit
   const [editingQuestionId, setEditingQuestionId] = useState(null);
@@ -339,6 +340,16 @@ const PrepTable = ({
                               className="pl-7 pr-2 py-1 w-44 text-xs border border-gray-200 rounded-md bg-white normal-case font-normal placeholder-gray-300 focus:outline-none focus:border-orange-300"
                             />
                           </div>
+                          {onOpenPreloadPicker && (
+                            <button
+                              onClick={onOpenPreloadPicker}
+                              className="flex items-center gap-1 px-2 py-1 text-xs border border-gray-200 rounded-md text-gray-500 hover:border-orange-300 hover:text-orange-500 cursor-pointer normal-case font-normal"
+                              title="Browse preloaded questions"
+                            >
+                              <LuDownload size={11} />
+                              Browse preloaded
+                            </button>
+                          )}
                         </div>
                       ) : (
                         flexRender(header.column.columnDef.header, header.getContext())

@@ -60,6 +60,39 @@ export async function deleteQuestion(questionId) {
   }
 }
 
+// Fetch PreloadedQuestion pool for picker UI. categoryId optional.
+export async function fetchPreloadedQuestions(roleId, categoryId, { limit = 100 } = {}) {
+  const token = getToken();
+  const params = new URLSearchParams({ role_id: roleId, limit: String(limit) });
+  if (categoryId) params.set("category_id", categoryId);
+  const res = await fetch(`${API_URL}/questions/preloaded?${params}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.detail || "Failed to fetch preloaded questions");
+  return data;
+}
+
+// Bulk-copy selected preloaded questions into user-owned Question nodes.
+// categoryIdOverride optional — apply same category to all (e.g. retag on import).
+export async function copyPreloadedQuestions(preloadedIds, roleId, positionKey = "general", categoryIdOverride = null) {
+  const token = getToken();
+  const body = {
+    preloaded_ids: preloadedIds,
+    role_id: roleId,
+    position_key: positionKey,
+  };
+  if (categoryIdOverride) body.category_id_override = categoryIdOverride;
+  const res = await fetch(`${API_URL}/questions/preloaded/copy`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.detail || "Failed to copy preloaded questions");
+  return data;
+}
+
 export async function reorderQuestions(roleId, categoryId, positionKey, orderedIds) {
   const token = getToken();
   const res = await fetch(`${API_URL}/questions/reorder`, {
