@@ -1,5 +1,10 @@
 import React, { useState, useEffect, useRef } from "react";
 import ConfirmDialog from "../components/ConfirmDialog";
+import { formatJobDescription } from "../services/aiTools";
+
+// Session-storage key for the "I understand this uses AI credits" ack so we
+// don't pester the user on every click.
+const AI_ACK_KEY = "positions.jdFormat.aiAck";
 
 // ============================================================
 // DEFAULT STATUSES — customizable by user
@@ -39,6 +44,47 @@ const PositionsPage = ({ data, user, onUpdatePositionsData, onDeleteRole, onDele
   const [statuses, setStatuses] = useState(
     data?.statuses?.length ? data.statuses : DEFAULT_STATUSES
   );
+
+  // AI format-with-AI state. One position at a time; preview is inline.
+  // status: idle | confirming | loading | preview | error
+  const [jdAi, setJdAi] = useState({ posId: null, status: "idle", result: "", error: "" });
+
+  const startJdFormat = (pos) => {
+    if (!pos?.jd?.trim()) return;
+    const acked = sessionStorage.getItem(AI_ACK_KEY) === "1";
+    if (!acked) {
+      setJdAi({ posId: pos.id, status: "confirming", result: "", error: "" });
+      return;
+    }
+    runJdFormat(pos);
+  };
+
+  const runJdFormat = async (pos) => {
+    setJdAi({ posId: pos.id, status: "loading", result: "", error: "" });
+    try {
+      const formatted = await formatJobDescription(pos.jd);
+      setJdAi({ posId: pos.id, status: "preview", result: formatted, error: "" });
+    } catch (err) {
+      setJdAi({ posId: pos.id, status: "error", result: "", error: err.message });
+    }
+  };
+
+  const applyJdFormat = (pos) => {
+    if (jdAi.posId !== pos.id || jdAi.status !== "preview") return;
+    updatePositions((prev) =>
+      prev.map((p) => (p.id === pos.id ? { ...p, jd: jdAi.result } : p)),
+    );
+    setJdAi({ posId: null, status: "idle", result: "", error: "" });
+  };
+
+  const dismissJdFormat = () => {
+    setJdAi({ posId: null, status: "idle", result: "", error: "" });
+  };
+
+  const confirmAiAndRun = (pos) => {
+    sessionStorage.setItem(AI_ACK_KEY, "1");
+    runJdFormat(pos);
+  };
 
   // Debounced sync to backend
   const syncTimerRef = useRef(null);
@@ -781,14 +827,58 @@ const PositionsPage = ({ data, user, onUpdatePositionsData, onDeleteRole, onDele
                           <div className="bg-gray-50 rounded-lg p-4">
                             <div className="flex items-center justify-between mb-2">
                               <span className="text-xs font-medium text-gray-500">Job Description</span>
-                              {/* TODO: change for further development — wire to LLM for formatting */}
-                              <button className="text-xs text-orange-400 hover:text-orange-500 cursor-pointer">
-                                ✨ Format with AI — coming soon
-                              </button>
+                              {jdAi.posId === pos.id && jdAi.status === "loading" ? (
+                                <span className="text-xs text-gray-400">✨ Formatting…</span>
+                              ) : jdAi.posId === pos.id && jdAi.status === "preview" ? (
+                                <div className="flex items-center gap-2">
+                                  <button
+                                    onClick={() => applyJdFormat(pos)}
+                                    className="text-xs px-2 py-0.5 rounded-md bg-orange-400 text-white hover:bg-orange-500 cursor-pointer"
+                                  >
+                                    Apply
+                                  </button>
+                                  <button
+                                    onClick={dismissJdFormat}
+                                    className="text-xs px-2 py-0.5 rounded-md text-gray-500 hover:text-gray-700 cursor-pointer"
+                                  >
+                                    Discard
+                                  </button>
+                                </div>
+                              ) : (
+                                <button
+                                  onClick={() => startJdFormat(pos)}
+                                  className="text-xs text-orange-400 hover:text-orange-500 cursor-pointer"
+                                >
+                                  ✨ Format with AI
+                                </button>
+                              )}
                             </div>
-                            <p className="text-sm text-gray-600 whitespace-pre-wrap max-h-48 overflow-y-auto show-scrollbar">
-                              {pos.jd}
-                            </p>
+                            {jdAi.posId === pos.id && jdAi.status === "preview" ? (
+                              <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                  <div className="text-[10px] uppercase tracking-wider text-gray-400 mb-1">Original</div>
+                                  <p className="text-sm text-gray-500 whitespace-pre-wrap max-h-64 overflow-y-auto show-scrollbar bg-white border border-gray-100 rounded p-2">
+                                    {pos.jd}
+                                  </p>
+                                </div>
+                                <div>
+                                  <div className="text-[10px] uppercase tracking-wider text-gray-400 mb-1">AI-formatted</div>
+                                  <p className="text-sm text-gray-700 whitespace-pre-wrap max-h-64 overflow-y-auto show-scrollbar bg-white border border-orange-200 rounded p-2">
+                                    {jdAi.result}
+                                  </p>
+                                </div>
+                              </div>
+                            ) : (
+                              <p className="text-sm text-gray-600 whitespace-pre-wrap max-h-48 overflow-y-auto show-scrollbar">
+                                {pos.jd}
+                              </p>
+                            )}
+                            {jdAi.posId === pos.id && jdAi.status === "error" && (
+                              <div className="text-xs text-red-500 mt-2">
+                                Format failed: {jdAi.error}
+                                <button onClick={dismissJdFormat} className="ml-2 underline cursor-pointer">dismiss</button>
+                              </div>
+                            )}
                           </div>
                         ) : (
                           <p className="text-sm text-gray-300 text-center py-2">
@@ -980,6 +1070,18 @@ const PositionsPage = ({ data, user, onUpdatePositionsData, onDeleteRole, onDele
         message={confirmDelete?.message}
         onConfirm={handleConfirmDelete}
         onCancel={() => setConfirmDelete(null)}
+      />
+
+      <ConfirmDialog
+        open={jdAi.status === "confirming"}
+        title="Format with AI?"
+        message="This calls Claude (~$0.002 per format) to reformat the JD as clean Markdown. You'll see a preview before anything is saved."
+        confirmLabel="Format"
+        onConfirm={() => {
+          const pos = positions.find((p) => p.id === jdAi.posId);
+          if (pos) confirmAiAndRun(pos);
+        }}
+        onCancel={dismissJdFormat}
       />
     </div>
   );

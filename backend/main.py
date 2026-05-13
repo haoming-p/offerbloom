@@ -16,6 +16,7 @@ from routers.demo import router as demo_router
 from routers.preferences import router as preferences_router
 from routers.stories import router as stories_router
 from routers.transcribe import router as transcribe_router
+from routers.ai_tools import router as ai_tools_router
 
 app = FastAPI(title="OfferBloom API")
 
@@ -41,6 +42,7 @@ app.include_router(demo_router)
 app.include_router(preferences_router)
 app.include_router(stories_router)
 app.include_router(transcribe_router)
+app.include_router(ai_tools_router)
 
 
 @app.get("/health")
