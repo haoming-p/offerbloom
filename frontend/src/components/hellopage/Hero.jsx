@@ -13,8 +13,8 @@ const Hero = ({ onSignIn, onSignUp, onTryDemo }) => {
         onTryDemo={onTryDemo}
       />
 
-      <div className="h-full flex items-center pt-16 px-12">
-        <div className="max-w-[1500px] mx-auto w-full grid grid-cols-[1fr_1.2fr] gap-12 items-center">
+      <div className="h-full flex items-center pt-8 px-12">
+        <div className="max-w-[1500px] mx-auto w-full grid grid-cols-[1fr_1.2fr] gap-8 items-center">
           {/* Left — words */}
           <div className="flex flex-col gap-7">
             <div className="inline-flex w-fit items-center gap-2 px-4 py-1.5 bg-white border border-orange-200 rounded-full text-sm text-orange-600 shadow-sm">
@@ -30,7 +30,8 @@ const Hero = ({ onSignIn, onSignUp, onTryDemo }) => {
 
             <p className="text-xl text-gray-500 max-w-lg leading-relaxed">
               Practice with AI that remembers your story — across resumes,
-              roles, and rounds. Built for PMs, software engineers, and beyond.
+              roles, practices, and preferences. Built for PMs, software
+              engineers, and beyond.
             </p>
 
             <div className="flex items-center gap-4 mt-2">
@@ -49,8 +50,10 @@ const Hero = ({ onSignIn, onSignUp, onTryDemo }) => {
             </div>
           </div>
 
-          {/* Right — live product tour */}
-          <HeroVisual />
+          {/* Right — live product tour. Wrapper's mt nudges it down vs. the text column. */}
+          <div className="mt-26">
+            <HeroVisual />
+          </div>
         </div>
       </div>
     </section>
