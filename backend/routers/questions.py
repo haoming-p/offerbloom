@@ -280,6 +280,30 @@ def list_questions(
                 "content": row["a"]["content"],
             })
 
+    # Fetch practices the same way so the frontend doesn't have to make a
+    # per-question call (was the root cause of saved practices "disappearing"
+    # after re-fetch — they were never re-loaded).
+    practices_by_q: dict[str, list] = {qid: [] for qid in question_ids}
+    if question_ids:
+        prac_result = db.run(
+            """
+            MATCH (q:Question)-[:HAS_PRACTICE]->(p:Practice)
+            WHERE q.id IN $ids
+            RETURN q.id AS q_id, p ORDER BY p.created_at DESC
+            """,
+            ids=question_ids,
+        )
+        for row in prac_result.data():
+            p = row["p"]
+            practices_by_q[row["q_id"]].append({
+                "id": p["id"],
+                "tag": p["tag"],
+                "duration": p["duration"],
+                "transcript": p["transcript"],
+                "ai_feedback": p.get("ai_feedback"),
+                "created_at": p["created_at"],
+            })
+
     return [
         QuestionOut(
             id=r["q"]["id"],
@@ -292,6 +316,7 @@ def list_questions(
             experience=r["q"].get("experience", ""),
             ideal_answer=r["q"].get("ideal_answer", ""),
             answers=answers_by_q.get(r["q"]["id"], []),
+            practices=practices_by_q.get(r["q"]["id"], []),
         )
         for r in records
     ]

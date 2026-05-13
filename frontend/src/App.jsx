@@ -50,6 +50,9 @@ function App() {
     if (isNewUser) {
       setScreen("onboarding");
     } else {
+      // Fresh sign-in lands on Dashboard regardless of last cached tab.
+      // (Refresh keeps the existing tab — that flow doesn't pass through here.)
+      localStorage.setItem("activeTab", "dashboard");
       getUserData()
         .then((data) => {
           setAppData({

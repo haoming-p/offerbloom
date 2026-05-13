@@ -194,7 +194,14 @@ const PrepPage = ({ data, user, defaultRoleId, onUpdateCategories }) => {
           experience: q.experience || "",
           ideal_answer: q.ideal_answer || "",
           answers: (q.answers || []).map((a) => ({ id: a.id, label: a.label, content: a.content })),
-          practices: [],
+          practices: (q.practices || []).map((p) => ({
+            id: p.id,
+            tag: p.tag,
+            duration: p.duration,
+            transcript: p.transcript,
+            aiFeedback: p.ai_feedback,
+            createdAt: p.created_at,
+          })),
         }));
         setQuestions((prev) => ({ ...prev, [currentKey]: mapped }));
       })

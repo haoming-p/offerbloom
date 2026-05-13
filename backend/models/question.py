@@ -16,6 +16,7 @@ class QuestionOut(BaseModel):
     experience: str = ""
     ideal_answer: str = ""
     answers: list = []
+    practices: list = []
 
 
 class QuestionCreate(BaseModel):
