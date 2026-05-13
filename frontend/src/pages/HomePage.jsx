@@ -33,6 +33,14 @@ const HomePage = ({
   // Sidebar collapse state — default expanded
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
+  // Wrap setActiveTab so navigating to Prep also collapses the sidebar
+  // (Prep needs the horizontal room). Doing it in the handler — instead of an
+  // effect — avoids cascading renders.
+  const handleTabChange = (tab) => {
+    setActiveTab(tab);
+    if (tab === "prep") setSidebarCollapsed(true);
+  };
+
   // Modal: "Save your demo work to a new account"
   const [showSaveModal, setShowSaveModal] = useState(false);
 
@@ -60,7 +68,7 @@ const HomePage = ({
           <DashboardPage
             data={data}
             user={user}
-            onNavigateToPrep={(roleId) => { setPrepDefaultRole(roleId); setActiveTab("prep"); }}
+            onNavigateToPrep={(roleId) => { setPrepDefaultRole(roleId); handleTabChange("prep"); }}
             onUpdatePositionsData={onUpdatePositionsData}
             onDeleteRole={onDeleteRole}
             onDeletePosition={onDeletePosition}
@@ -103,8 +111,8 @@ const HomePage = ({
       {/* Top Bar */}
       <TopBar
         user={user}
-        onLogoClick={() => setActiveTab("dashboard")}
-        onAvatarClick={() => setActiveTab("me")}
+        onLogoClick={() => handleTabChange("dashboard")}
+        onAvatarClick={() => handleTabChange("me")}
         isDemoGuest={user?.is_demo_guest}
         onResetDemo={() => setShowResetModal(true)}
         onSaveToAccount={() => setShowSaveModal(true)}
@@ -114,7 +122,7 @@ const HomePage = ({
       <div className="flex flex-1 overflow-hidden">
         <SideBar
           activeTab={activeTab}
-          onTabChange={setActiveTab}
+          onTabChange={handleTabChange}
           isDemoGuest={user?.is_demo_guest}
           collapsed={sidebarCollapsed}
           onToggleCollapse={() => setSidebarCollapsed((c) => !c)}
