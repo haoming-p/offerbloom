@@ -31,7 +31,13 @@ function App() {
           categories: data.categories || {},
           files: [],
         });
-        setScreen("home");
+        // If the user hasn't completed onboarding (no roles persisted yet),
+        // resume onboarding instead of dropping them into the app.
+        if (!data.roles || data.roles.length === 0) {
+          setScreen("onboarding");
+        } else {
+          setScreen("home");
+        }
       })
       .catch(() => {
         removeToken();
@@ -171,6 +177,9 @@ function App() {
             files: data.files || [],
           };
           setAppData(d);
+          // Land freshly onboarded users on the Dashboard, not whatever tab
+          // happened to be cached in localStorage.
+          localStorage.setItem("activeTab", "dashboard");
           setScreen("home");
         }}
       />

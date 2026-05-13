@@ -1,8 +1,9 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import StepRoles from "../components/onboarding/StepRoles";
 import StepPositions from "../components/onboarding/StepPositions";
 import StepFiles from "../components/onboarding/StepFiles";
 import { saveOnboarding } from "../services/onboarding";
+import { updateFileLinks } from "../services/files";
 
 const STEPS = [
   { id: 1, label: "Choose Roles" },
@@ -10,19 +11,47 @@ const STEPS = [
   { id: 3, label: "Upload Files" },
 ];
 
+// Persisted across refresh so users don't lose their progress.
+// Files aren't included — they hold non-serializable File objects.
+const STORAGE_KEY = "offerbloom-onboarding-progress";
+
+function loadProgress() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
 const OnboardingPage = ({ onComplete }) => {
-  const [currentStep, setCurrentStep] = useState(1);
+  const saved = loadProgress();
+
+  const [currentStep, setCurrentStep] = useState(saved?.currentStep || 1);
 
   // Shared data across all steps
   // roles is now an array of OBJECTS, not just ids
   // e.g. [{ id: "pm", label: "Product Manager", emoji: "🎯" }]
   // This way StepPositions and StepFiles can read the label directly
-  // TODO: change for further development — save to backend on complete
   const [onboardingData, setOnboardingData] = useState({
-    roles: [],
-    positions: [],
+    roles: saved?.roles || [],
+    positions: saved?.positions || [],
     files: [],
   });
+
+  // Persist roles/positions/currentStep on every change so a refresh resumes
+  // where the user left off.
+  useEffect(() => {
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({
+        currentStep,
+        roles: onboardingData.roles,
+        positions: onboardingData.positions,
+      })
+    );
+  }, [currentStep, onboardingData.roles, onboardingData.positions]);
 
   // --- Step 1 handler ---
   // Receives a full role object { id, label, emoji, desc }
@@ -63,9 +92,32 @@ const OnboardingPage = ({ onComplete }) => {
           roles: onboardingData.roles,
           positions: onboardingData.positions,
         });
+
+        // Roles/positions now exist in the graph — replay any file links the
+        // user set during step 3. Links are stored locally as a flat array of
+        // target ids, with positions prefixed "pos-" to distinguish them.
+        await Promise.all(
+          onboardingData.files
+            .filter((f) => f.linkedTo && f.linkedTo.length > 0)
+            .map((f) => {
+              const roleIds = [];
+              const positionIds = [];
+              for (const id of f.linkedTo) {
+                if (id.startsWith("pos-")) {
+                  positionIds.push(id.slice(4));
+                } else {
+                  roleIds.push(id);
+                }
+              }
+              return updateFileLinks(f.id, { roleIds, positionIds }).catch(
+                () => {}
+              );
+            })
+        );
       } catch (err) {
         console.error("Failed to save onboarding:", err);
       }
+      localStorage.removeItem(STORAGE_KEY);
       onComplete(onboardingData);
     }
   };
@@ -83,7 +135,7 @@ const OnboardingPage = ({ onComplete }) => {
         <span className="text-2xl font-bold text-orange-400">OfferBloom</span>
       </div>
 
-      <div className="max-w-4xl mx-auto mt-12 px-8">
+      <div className="max-w-4xl mx-auto mt-12 px-8 pb-16">
         {/* Progress Bar */}
         <div className="flex items-center justify-between mb-12">
           {STEPS.map((step) => (
@@ -115,8 +167,8 @@ const OnboardingPage = ({ onComplete }) => {
           ))}
         </div>
 
-        {/* Step Content */}
-        <div className="bg-white rounded-xl border border-gray-200 p-8 min-h-80">
+        {/* Step Content — internal scroll so Next button stays visible */}
+        <div className="bg-white rounded-xl border border-gray-200 p-8 min-h-80 max-h-[60vh] overflow-y-auto">
           {currentStep === 1 && (
             <StepRoles
               selectedRoles={onboardingData.roles}

@@ -78,7 +78,7 @@ const HelloPage = ({ onAuthSuccess, onTryDemo }) => {
               {showModal === "signup" && (
                 <input
                   type="text"
-                  placeholder="Full name"
+                  placeholder="Name"
                   required
                   value={form.name}
                   onChange={(e) => setForm({ ...form, name: e.target.value })}

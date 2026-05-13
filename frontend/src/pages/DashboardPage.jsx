@@ -166,7 +166,9 @@ const DashboardPage = ({
           <BloomAvatar size={48} ring={false} />
           <div className="min-w-0">
             <h1 className="text-2xl font-bold text-gray-800 mb-1">
-              {isDemoGuest ? "Explore a sample dashboard" : "Welcome back! Ready to prep?"}
+              {isDemoGuest
+                ? "Explore a sample dashboard"
+                : `Welcome${user?.name ? `, ${user.name.split(" ")[0]}` : ""}! Ready to prep?`}
             </h1>
             <p className="text-sm text-gray-400">
               {isDemoGuest
