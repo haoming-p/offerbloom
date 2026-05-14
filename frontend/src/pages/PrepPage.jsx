@@ -57,7 +57,7 @@ const writeSavedView = (state) => {
   } catch {}
 };
 
-const PrepPage = ({ data, user, defaultRoleId, onUpdateCategories }) => {
+const PrepPage = ({ data, user, defaultRoleId, onUpdateCategories, onNavigateToMe }) => {
   const { roles = [], positions = [], categories: savedCategories = {} } = data || {};
   const isDemoGuest = user?.is_demo_guest;
 
@@ -588,6 +588,7 @@ const PrepPage = ({ data, user, defaultRoleId, onUpdateCategories }) => {
               onUpdateQuestionText={handleUpdateQuestionText}
               onBack={() => setCurrentView("table")}
               onNavigate={(id) => setCurrentView({ page: "detail", questionId: id })}
+              onNavigateToMe={onNavigateToMe}
             />
           ) : currentView?.page === "detail" && !loadedKeys.has(currentKey) ? (
             // Detail view requested but the question list for this category

@@ -4,6 +4,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { sendChatMessage } from "../../services/chat";
 import { createPreference } from "../../services/preferences";
+import AIPreferenceHelp from "../AIPreferenceHelp";
 import BloomAvatar from "../BloomAvatar";
 
 const stripHtml = (html) => {
@@ -81,31 +82,33 @@ const BotMessage = ({ text, hideActions }) => (
   </div>
 );
 
-const UserMessage = ({ text, remembered, onRemember }) => (
+const UserMessage = ({ text, remembered, onRemember, onNavigateToMe }) => (
   <div className="flex justify-end">
     <div className="flex flex-col items-end max-w-[85%] gap-1">
       <div className="px-4 py-2.5 rounded-2xl rounded-br-sm bg-orange-400 text-white text-sm whitespace-pre-wrap">
         {text}
       </div>
       {onRemember && (
-        <button
-          onClick={onRemember}
-          disabled={remembered}
-          title={remembered ? "Saved · manage in Me tab" : "Save as an AI preference — applied to future replies"}
-          className={`text-[10px] px-2 py-0.5 rounded-full border cursor-pointer ${
-            remembered
-              ? "border-orange-200 bg-orange-50 text-orange-500 cursor-default"
-              : "border-gray-200 text-gray-400 hover:border-orange-300 hover:text-orange-500"
-          }`}
-        >
-          {remembered ? "✓ Remembered" : "Remember this"}
-        </button>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={onRemember}
+            disabled={remembered}
+            className={`text-[10px] px-2 py-0.5 rounded-full border cursor-pointer ${
+              remembered
+                ? "border-orange-200 bg-orange-50 text-orange-500 cursor-default"
+                : "border-gray-200 text-gray-400 hover:border-orange-300 hover:text-orange-500"
+            }`}
+          >
+            {remembered ? "✓ Saved" : "+ AI preference"}
+          </button>
+          <AIPreferenceHelp onNavigateToMe={onNavigateToMe} />
+        </div>
       )}
     </div>
   </div>
 );
 
-const FileAIChat = ({ selectedFile, activeSection, selectedStory, onClearStory }) => {
+const FileAIChat = ({ selectedFile, activeSection, selectedStory, onClearStory, onNavigateToMe }) => {
   const [messages, setMessages] = useState([
     {
       sender: "bot",
@@ -271,6 +274,7 @@ const FileAIChat = ({ selectedFile, activeSection, selectedStory, onClearStory }
               text={msg.text}
               remembered={!!rememberedFlags[i]}
               onRemember={() => handleRemember(i, msg.text)}
+              onNavigateToMe={onNavigateToMe}
             />
           ) : (
             <BotMessage key={i} text={msg.text} hideActions={msg.isGreeting} />
