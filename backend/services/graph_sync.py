@@ -16,7 +16,8 @@ from neo4j import Session
 
 
 def sync_user_roles(db: Session, user_id: str, roles: list[dict]) -> None:
-    """Replace user's :Role nodes with the given list. Drops orphaned roles."""
+    """Replace user's :Role nodes with the given list. Drops orphaned roles.
+    Batched via UNWIND — one round-trip for the upsert regardless of role count."""
     db.run(
         """
         MATCH (u:User {id: $user_id})-[r:HAS_ROLE]->(role:Role)
@@ -27,26 +28,35 @@ def sync_user_roles(db: Session, user_id: str, roles: list[dict]) -> None:
         keep_ids=[r["id"] for r in roles],
     )
 
-    for r in roles:
-        db.run(
-            """
-            MATCH (u:User {id: $user_id})
-            MERGE (u)-[:HAS_ROLE]->(role:Role {id: $id})
-            SET role.label = $label,
-                role.emoji = $emoji,
-                role.desc = $desc
-            """,
-            user_id=user_id,
-            id=r["id"],
-            label=r.get("label", ""),
-            emoji=r.get("emoji", ""),
-            desc=r.get("desc", ""),
-        )
+    if not roles:
+        return
+
+    db.run(
+        """
+        MATCH (u:User {id: $user_id})
+        UNWIND $roles AS r
+        MERGE (u)-[:HAS_ROLE]->(role:Role {id: r.id})
+        SET role.label = r.label,
+            role.emoji = r.emoji,
+            role.desc = r.desc
+        """,
+        user_id=user_id,
+        roles=[
+            {
+                "id": r["id"],
+                "label": r.get("label", ""),
+                "emoji": r.get("emoji", ""),
+                "desc": r.get("desc", ""),
+            }
+            for r in roles
+        ],
+    )
 
 
 def sync_user_positions(db: Session, user_id: str, positions: list[dict]) -> None:
     """Replace user's :Position nodes with the given list. Each Position is
-    linked back to its :Role via [:FOR_ROLE]. Drops orphaned positions."""
+    linked back to its :Role via [:FOR_ROLE]. Drops orphaned positions.
+    Batched via UNWIND — two round-trips total (upsert + role links)."""
     db.run(
         """
         MATCH (u:User {id: $user_id})-[r:HAS_POSITION]->(p:Position)
@@ -57,36 +67,50 @@ def sync_user_positions(db: Session, user_id: str, positions: list[dict]) -> Non
         keep_ids=[str(p["id"]) for p in positions],
     )
 
-    for p in positions:
-        pid = str(p["id"])
+    if not positions:
+        return
+
+    pos_rows = [
+        {
+            "id": str(p["id"]),
+            "title": p.get("title", ""),
+            "company": p.get("company", ""),
+            "jd": p.get("jd", ""),
+            "role_id": p.get("role", ""),
+        }
+        for p in positions
+    ]
+
+    db.run(
+        """
+        MATCH (u:User {id: $user_id})
+        UNWIND $positions AS p
+        MERGE (u)-[:HAS_POSITION]->(pos:Position {id: p.id})
+        SET pos.title = p.title,
+            pos.company = p.company,
+            pos.jd = p.jd,
+            pos.role_id = p.role_id
+        """,
+        user_id=user_id,
+        positions=pos_rows,
+    )
+
+    # Link positions → roles for those that have a role_id. Scoped through the
+    # user so we only touch this user's :Position / :Role nodes (the original
+    # per-row code matched globally by id, which could collide across users).
+    pos_with_role = [p for p in pos_rows if p["role_id"]]
+    if pos_with_role:
         db.run(
             """
             MATCH (u:User {id: $user_id})
-            MERGE (u)-[:HAS_POSITION]->(pos:Position {id: $id})
-            SET pos.title = $title,
-                pos.company = $company,
-                pos.jd = $jd,
-                pos.role_id = $role_id
+            UNWIND $links AS link
+            MATCH (u)-[:HAS_POSITION]->(pos:Position {id: link.id})
+            MATCH (u)-[:HAS_ROLE]->(role:Role {id: link.role_id})
+            MERGE (pos)-[:FOR_ROLE]->(role)
             """,
             user_id=user_id,
-            id=pid,
-            title=p.get("title", ""),
-            company=p.get("company", ""),
-            jd=p.get("jd", ""),
-            role_id=p.get("role", ""),
+            links=pos_with_role,
         )
-
-        # Link to the role node
-        if p.get("role"):
-            db.run(
-                """
-                MATCH (pos:Position {id: $pos_id})
-                MATCH (role:Role {id: $role_id})
-                MERGE (pos)-[:FOR_ROLE]->(role)
-                """,
-                pos_id=pid,
-                role_id=p["role"],
-            )
 
 
 def sync_user_from_json(db: Session, user_id: str) -> dict:

@@ -9,7 +9,13 @@ from services.graph_sync import sync_user_from_json
 
 
 def clone_user_data(db: Session, src_id: str, tgt_id: str) -> None:
-    """Copy all user-owned data from src to tgt. Assumes both User nodes already exist."""
+    """Copy all user-owned data from src to tgt. Assumes both User nodes already exist.
+
+    Batched with UNWIND so a populated source clones in a handful of round-trips
+    instead of one per file/question/answer/practice. Matters most on AuraDB
+    where each round-trip is ~100ms; the demo "Try" flow used to take many
+    seconds for a populated admin account.
+    """
 
     # 1. User-level JSON properties (roles, positions, statuses, onboarded flag)
     db.run(
@@ -24,26 +30,30 @@ def clone_user_data(db: Session, src_id: str, tgt_id: str) -> None:
         tgt_id=tgt_id,
     )
 
-    # 2. Files — clone metadata, share R2 keys
-    files = db.run(
+    # 2. Files — bulk clone metadata, share R2 keys
+    file_rows = db.run(
         "MATCH (u:User {id: $id})-[:OWNS]->(f:File) RETURN f",
         id=src_id,
     ).data()
-    for record in files:
-        props = dict(record["f"])
-        props["id"] = str(uuid.uuid4())
+    if file_rows:
+        files_props = []
+        for r in file_rows:
+            props = dict(r["f"])
+            props["id"] = str(uuid.uuid4())
+            files_props.append(props)
         db.run(
             """
             MATCH (u:User {id: $tgt_id})
-            CREATE (f:File)
-            SET f = $props
-            CREATE (u)-[:OWNS]->(f)
+            UNWIND $files AS file_props
+            CREATE (u)-[:OWNS]->(f:File)
+            SET f = file_props
             """,
             tgt_id=tgt_id,
-            props=props,
+            files=files_props,
         )
 
-    # 3. Questions + nested answers + practices
+    # 3. Questions + nested answers + practices.
+    # Read everything in one query, then bulk-create in three more.
     rows = db.run(
         """
         MATCH (u:User {id: $id})-[:HAS_QUESTION]->(q:Question)
@@ -56,52 +66,63 @@ def clone_user_data(db: Session, src_id: str, tgt_id: str) -> None:
         id=src_id,
     ).data()
 
+    questions_props: list[dict] = []
+    answers_payload: list[dict] = []
+    practices_payload: list[dict] = []
+
     for row in rows:
         q_props = dict(row["q"])
         new_q_id = str(uuid.uuid4())
         q_props["id"] = new_q_id
-        db.run(
-            """
-            MATCH (u:User {id: $tgt_id})
-            CREATE (q:Question)
-            SET q = $props
-            CREATE (u)-[:HAS_QUESTION]->(q)
-            """,
-            tgt_id=tgt_id,
-            props=q_props,
-        )
+        questions_props.append(q_props)
 
         for a in row["answers"] or []:
             if a is None:
                 continue
             a_props = dict(a)
             a_props["id"] = str(uuid.uuid4())
-            db.run(
-                """
-                MATCH (q:Question {id: $q_id})
-                CREATE (a:Answer)
-                SET a = $props
-                CREATE (q)-[:HAS_ANSWER]->(a)
-                """,
-                q_id=new_q_id,
-                props=a_props,
-            )
+            answers_payload.append({"q_id": new_q_id, "props": a_props})
 
         for p in row["practices"] or []:
             if p is None:
                 continue
             p_props = dict(p)
             p_props["id"] = str(uuid.uuid4())
-            db.run(
-                """
-                MATCH (q:Question {id: $q_id})
-                CREATE (p:Practice)
-                SET p = $props
-                CREATE (q)-[:HAS_PRACTICE]->(p)
-                """,
-                q_id=new_q_id,
-                props=p_props,
-            )
+            practices_payload.append({"q_id": new_q_id, "props": p_props})
+
+    if questions_props:
+        db.run(
+            """
+            MATCH (u:User {id: $tgt_id})
+            UNWIND $questions AS q_props
+            CREATE (u)-[:HAS_QUESTION]->(q:Question)
+            SET q = q_props
+            """,
+            tgt_id=tgt_id,
+            questions=questions_props,
+        )
+
+    if answers_payload:
+        db.run(
+            """
+            UNWIND $answers AS row
+            MATCH (q:Question {id: row.q_id})
+            CREATE (q)-[:HAS_ANSWER]->(a:Answer)
+            SET a = row.props
+            """,
+            answers=answers_payload,
+        )
+
+    if practices_payload:
+        db.run(
+            """
+            UNWIND $practices AS row
+            MATCH (q:Question {id: row.q_id})
+            CREATE (q)-[:HAS_PRACTICE]->(p:Practice)
+            SET p = row.props
+            """,
+            practices=practices_payload,
+        )
 
     # 4. Mirror roles/positions JSON to graph nodes so :LINKED_TO edges and
     # RAG retrieval can use them. Without this, the target user has JSON but

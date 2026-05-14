@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { LuLoaderCircle } from "react-icons/lu";
 import HelloPage from "./pages/HelloPage";
 import OnboardingPage from "./pages/OnboardingPage";
 import HomePage from "./pages/HomePage";
@@ -12,6 +13,9 @@ import {
 
 function App() {
   const [screen, setScreen] = useState("loading");
+  // "boot" = initial app boot (just shows "Loading…"); "demo" = mid-clone for
+  // a Try-demo visitor (shows the spinner + explanation card).
+  const [loadingType, setLoadingType] = useState("boot");
   const [user, setUser] = useState(null);
   const [appData, setAppData] = useState(null);
 
@@ -72,6 +76,7 @@ function App() {
   }
 
   async function handleTryDemo() {
+    setLoadingType("demo");
     setScreen("loading");
     try {
       const result = await demoLogin();
@@ -87,6 +92,8 @@ function App() {
       setScreen("home");
     } catch {
       setScreen("hello");
+    } finally {
+      setLoadingType("boot");
     }
   }
 
@@ -154,7 +161,25 @@ function App() {
   if (screen === "loading") {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <span className="text-gray-400 text-sm">Loading…</span>
+        {loadingType === "demo" ? (
+          <div className="flex flex-col items-center max-w-md text-center px-6">
+            <div className="text-3xl font-bold text-orange-500 mb-6">OfferBloom</div>
+            <LuLoaderCircle
+              className="w-8 h-8 text-orange-400 animate-spin mb-4"
+              aria-hidden="true"
+            />
+            <p className="text-gray-700 text-base font-medium mb-1.5">
+              Setting up your demo workspace…
+            </p>
+            <p className="text-gray-500 text-sm leading-relaxed">
+              We're cloning a starter workspace just for you — roles, positions,
+              files, questions, and saved answers — so you can explore everything
+              right away.
+            </p>
+          </div>
+        ) : (
+          <span className="text-gray-400 text-sm">Loading…</span>
+        )}
       </div>
     );
   }
