@@ -433,7 +433,13 @@ const PrepPage = ({ data, user, defaultRoleId, onUpdateCategories, onNavigateToM
     _updateQuestion(activeQuestionId, { practices: newPractices });
   };
 
-  const handleOpenDetail = (questionId) => setCurrentView({ page: "detail", questionId });
+  // Opening a question's detail view collapses the Roles & Positions nav so
+  // the Answers / Practice / Bloom columns get the horizontal room. User can
+  // re-expand from the collapsed strip if they want it back.
+  const handleOpenDetail = (questionId) => {
+    setCurrentView({ page: "detail", questionId });
+    setNavCollapsed(true);
+  };
 
   // After preload picker copies questions: invalidate caches for the target
   // (role, position) so a fresh fetch hydrates the new rows, then navigate
