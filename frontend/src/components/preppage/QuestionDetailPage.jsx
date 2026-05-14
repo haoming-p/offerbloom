@@ -73,6 +73,7 @@ const QuestionDetailPage = ({
   onUpdateQuestionText,
   onBack,
   onNavigate,
+  onNavigateToMe,
 }) => {
   const currentIndex = questions.findIndex((q) => q.id === question.id);
   const prevQuestion = currentIndex > 0 ? questions[currentIndex - 1] : null;
@@ -282,6 +283,7 @@ const QuestionDetailPage = ({
             onUpdatePractices={onUpdatePractices}
             onAddAnswer={onAddAnswer}
             onUpdateAnswer={onUpdateAnswer}
+            onNavigateToMe={onNavigateToMe}
           />
         </Column>
       </div>

@@ -57,7 +57,7 @@ const writeSavedView = (state) => {
   } catch {}
 };
 
-const PrepPage = ({ data, user, defaultRoleId, onUpdateCategories }) => {
+const PrepPage = ({ data, user, defaultRoleId, onUpdateCategories, onNavigateToMe }) => {
   const { roles = [], positions = [], categories: savedCategories = {} } = data || {};
   const isDemoGuest = user?.is_demo_guest;
 
@@ -433,7 +433,13 @@ const PrepPage = ({ data, user, defaultRoleId, onUpdateCategories }) => {
     _updateQuestion(activeQuestionId, { practices: newPractices });
   };
 
-  const handleOpenDetail = (questionId) => setCurrentView({ page: "detail", questionId });
+  // Opening a question's detail view collapses the Roles & Positions nav so
+  // the Answers / Practice / Bloom columns get the horizontal room. User can
+  // re-expand from the collapsed strip if they want it back.
+  const handleOpenDetail = (questionId) => {
+    setCurrentView({ page: "detail", questionId });
+    setNavCollapsed(true);
+  };
 
   // After preload picker copies questions: invalidate caches for the target
   // (role, position) so a fresh fetch hydrates the new rows, then navigate
@@ -588,6 +594,7 @@ const PrepPage = ({ data, user, defaultRoleId, onUpdateCategories }) => {
               onUpdateQuestionText={handleUpdateQuestionText}
               onBack={() => setCurrentView("table")}
               onNavigate={(id) => setCurrentView({ page: "detail", questionId: id })}
+              onNavigateToMe={onNavigateToMe}
             />
           ) : currentView?.page === "detail" && !loadedKeys.has(currentKey) ? (
             // Detail view requested but the question list for this category

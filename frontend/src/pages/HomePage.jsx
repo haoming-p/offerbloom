@@ -85,7 +85,7 @@ const HomePage = ({
           />
         );
       case "library":
-        return <LibraryPage data={data} user={user} />;
+        return <LibraryPage data={data} user={user} onNavigateToMe={() => handleTabChange("me")} />;
       case "prep":
         return (
           <PrepPage
@@ -93,6 +93,7 @@ const HomePage = ({
             user={user}
             defaultRoleId={prepDefaultRole}
             onUpdateCategories={onUpdateCategories}
+            onNavigateToMe={() => handleTabChange("me")}
           />
         );
       case "me":

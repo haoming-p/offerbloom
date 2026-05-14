@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useImperativeHandle, forwardRef } from "react";
-import { LuSparkles, LuX, LuCircleHelp } from "react-icons/lu";
+import { LuSparkles, LuX } from "react-icons/lu";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { marked } from "marked";
@@ -13,6 +13,7 @@ import {
 } from "../../services/chatSessions";
 import { defaultAnswerLabel } from "../../utils/timestamps";
 import BloomAvatar from "../BloomAvatar";
+import AIPreferenceHelp from "../AIPreferenceHelp";
 
 // Greeting shown on a fresh session before any real reply. Lists the
 // resources the model grounds on + the main affordances so users know what
@@ -93,6 +94,7 @@ const AIAssistantPanel = forwardRef(({
   onAddAnswer,
   onUpdateAnswer,
   onUpdatePractices,
+  onNavigateToMe,
 }, ref) => {
   // What kind of item is currently selected — drives banner + buttons.
   // Mutual exclusion is enforced upstream (QuestionDetailPage); we just read it.
@@ -358,8 +360,8 @@ const AIAssistantPanel = forwardRef(({
   };
 
   // Save a user message as a persisted AI preference. Defaults to the role
-  // currently being prepped for — so "Remember this" while practicing PM saves
-  // a PM-only rule by default. Users can broaden the scope/role in the Me tab.
+  // currently being prepped for — so saving while practicing PM creates a
+  // PM-only rule by default. Users can broaden the scope/role in the Me tab.
   const handleRememberPreference = async (msgIndex, text) => {
     const trimmed = (text || "").trim();
     if (!trimmed) return;
@@ -495,14 +497,9 @@ const AIAssistantPanel = forwardRef(({
                           : "border-gray-200 text-gray-400 hover:border-orange-300 hover:text-orange-500"
                       }`}
                     >
-                      {remembered ? "✓ Remembered" : "Remember this"}
+                      {remembered ? "✓ Saved" : "+ AI preference"}
                     </button>
-                    <span
-                      title="Bloom will follow this rule in future replies. Manage in the Me tab."
-                      className="text-gray-300 hover:text-gray-500 cursor-help"
-                    >
-                      <LuCircleHelp size={11} />
-                    </span>
+                    <AIPreferenceHelp onNavigateToMe={onNavigateToMe} />
                   </div>
                 </div>
               </div>

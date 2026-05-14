@@ -32,7 +32,7 @@ const SECTIONS = [
   { id: "stories", label: "My Stories", Icon: LuBookOpen },
 ];
 
-const LibraryPage = ({ data, user }) => {
+const LibraryPage = ({ data, user, onNavigateToMe }) => {
   const { roles = [], positions = [], files: initialFiles = [] } = data || {};
   const isDemoGuest = user?.is_demo_guest;
 
@@ -243,6 +243,7 @@ const LibraryPage = ({ data, user }) => {
             selectedStory={activeSection === "stories" ? selectedStory : null}
             onClearStory={() => setSelectedStory(null)}
             activeSection={null}
+            onNavigateToMe={onNavigateToMe}
           />
         </div>
       </div>
