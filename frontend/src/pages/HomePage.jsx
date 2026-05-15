@@ -139,7 +139,12 @@ const HomePage = ({
       {showSaveModal && (
         <SaveToAccountModal
           onClose={() => setShowSaveModal(false)}
-          onSuccess={() => window.location.reload()}
+          onSuccess={() => {
+            // Land the freshly-converted account on Dashboard, not on whatever
+            // tab the guest was viewing when they clicked Save.
+            localStorage.setItem("activeTab", "dashboard");
+            window.location.reload();
+          }}
         />
       )}
 
